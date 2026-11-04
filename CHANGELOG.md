@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0-dev
+
+Unreleased host history and traffic analytics.
+
+### Added
+
+- SQLite rollups for CPU, memory, disk, and network, sampled about every 15 seconds
+- `GET /api/metrics/host/series` for live, 24h, 7d, 30d, and month windows
+- Metrics page with a range selector and charts
+- Analytics rollups for requests, visitors, bandwidth, error rate, p95, tops, devices, and optional geo
+- `GET /api/analytics/summary` for the same windows, session required
+- Panel API middleware as the traffic source. No demo rows are inserted at startup
+- Optional Combined access-log tail (`ALTAS_ACCESS_LOG`), off by default, starting at the end of the file
+- Optional MaxMind GeoIP database (`ALTAS_GEOIP_DB`). A missing file leaves country and city empty
+- Daily visitor hashes. Raw client addresses are not stored. IPv4 is truncated to `/24` and IPv6 to `/48` before lookup or hashing
+
+### Not in this version
+
+- A public ingest URL for outside traffic
+- Importing an existing access log from the start of the file
+- Creating, starting, or stopping containers
+- File manager UI
+- Malware scanning beyond the report-only hook
+
 ## 0.2.0-dev
 
 Unreleased foundation for stacks and true-state monitoring.
@@ -19,7 +43,7 @@ Unreleased foundation for stacks and true-state monitoring.
 
 - Creating, starting, or stopping containers from templates
 - File manager UI
-- Geo traffic analytics
+- Geo traffic from outside the panel, beyond the optional access-log tail
 - Malware scanning beyond the hook
 - `get.altaspanel.tech` installer
 - Auto-update (settings toggle, GitHub Releases check, checksum verify, safe restart, rollback). Planned next, not implemented

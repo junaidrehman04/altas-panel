@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/junaidrehman04/altas/apps/api/internal/analytics"
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
 	"github.com/junaidrehman04/altas/apps/api/internal/db"
 	"github.com/junaidrehman04/altas/apps/api/internal/httpapi"
+	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
 )
 
 func main() {
@@ -25,6 +27,14 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go metrics.Sample(ctx, metrics.NewCollector(cfg.HostProc, cfg.HostRoot), metrics.NewStore(sqlDB), cfg.MetricsEvery, logger)
+	if cfg.AccessLog != "" {
+		go analytics.Follow(ctx, cfg.AccessLog, analytics.NewRecorder(sqlDB, analytics.OpenLocator(cfg.GeoIPDB, logger)), logger)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.New(cfg, sqlDB, logger),
@@ -34,8 +44,6 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

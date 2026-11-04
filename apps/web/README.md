@@ -1,6 +1,6 @@
 # Altas Panel web
 
-Vite + React client for the v0.2.0-dev panel.
+Vite + React client for the v0.3.0-dev panel. Overview, Metrics, Analytics, and Stacks are signed-in routes.
 
 ```bash
 npm install
