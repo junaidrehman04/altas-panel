@@ -3,7 +3,9 @@ package httpapi_test
 import (
 	"bytes"
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,6 +87,7 @@ type userBody struct {
 	User struct {
 		ID        string `json:"id"`
 		Email     string `json:"email"`
+		IsAdmin   bool   `json:"is_admin"`
 		CreatedAt string `json:"created_at"`
 	} `json:"user"`
 }
@@ -399,8 +403,15 @@ func TestDuplicateEmailAndBadPassword(t *testing.T) {
 		"email":    "dup@altas.dev",
 		"password": "correct-horse",
 	})
-	if res.StatusCode != http.StatusConflict {
-		t.Fatalf("duplicate status %d body %s", res.StatusCode, data)
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("closed registration status %d body %s", res.StatusCode, data)
+	}
+	var closed errBody
+	if err := json.Unmarshal(data, &closed); err != nil {
+		t.Fatal(err)
+	}
+	if closed.Error != registrationClosedError {
+		t.Fatalf("closed registration error = %q", closed.Error)
 	}
 
 	res, data = postJSON(t, client, srv.URL+"/api/auth/login", map[string]string{
@@ -429,6 +440,232 @@ func TestDuplicateEmailAndBadPassword(t *testing.T) {
 		t.Fatalf("login errors differ: unknown=%q known=%q", unknown.Error, known.Error)
 	}
 	_ = res
+}
+
+const registrationClosedError = "Public registration is closed. The first account is the panel admin; further accounts will be invite-only."
+
+func TestFirstAccountIsAdminAndClosesPublicRegistration(t *testing.T) {
+	handler, _ := newTestApp(t, "development")
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	client := &http.Client{}
+
+	res, data := getJSON(t, client, srv.URL+"/api/auth/registration")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("registration status %d body %s", res.StatusCode, data)
+	}
+	if !registrationOpen(t, data) {
+		t.Fatal("registration must be open before any account exists")
+	}
+
+	res, data = postJSON(t, client, srv.URL+"/api/auth/register", map[string]string{
+		"email":    "Founder@Altas.dev",
+		"password": "correct-horse",
+	})
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("register status %d body %s", res.StatusCode, data)
+	}
+	created := decodeUser(t, data)
+	if !created.User.IsAdmin || created.User.Email != "founder@altas.dev" {
+		t.Fatalf("first user = %+v", created.User)
+	}
+
+	res, data = getJSON(t, client, srv.URL+"/api/auth/registration")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("registration after first user %d body %s", res.StatusCode, data)
+	}
+	if registrationOpen(t, data) {
+		t.Fatal("registration must close after the first account")
+	}
+
+	res, data = postJSON(t, client, srv.URL+"/api/auth/register", map[string]string{
+		"email":    "second@altas.dev",
+		"password": "short",
+	})
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("short password while closed status %d body %s", res.StatusCode, data)
+	}
+
+	res, data = postJSON(t, client, srv.URL+"/api/auth/register", map[string]string{
+		"email":    "second@altas.dev",
+		"password": "correct-horse",
+	})
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("second register status %d body %s", res.StatusCode, data)
+	}
+	var closed errBody
+	if err := json.Unmarshal(data, &closed); err != nil {
+		t.Fatal(err)
+	}
+	if closed.Error != registrationClosedError {
+		t.Fatalf("error = %q", closed.Error)
+	}
+	if setCookie(res, "altas_session") != "" {
+		t.Fatal("closed registration must not set a session cookie")
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authed := &http.Client{Jar: jar}
+	res, data = postJSON(t, authed, srv.URL+"/api/auth/login", map[string]string{
+		"email":    "founder@altas.dev",
+		"password": "correct-horse",
+	})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("login status %d body %s", res.StatusCode, data)
+	}
+	logged := decodeUser(t, data)
+	if !logged.User.IsAdmin || logged.User.ID != created.User.ID {
+		t.Fatalf("login user = %+v", logged.User)
+	}
+	res, data = getJSON(t, authed, srv.URL+"/api/me")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("me status %d body %s", res.StatusCode, data)
+	}
+	me := decodeUser(t, data)
+	if !me.User.IsAdmin || me.User.Email != "founder@altas.dev" {
+		t.Fatalf("me = %+v", me.User)
+	}
+}
+
+func TestConcurrentFirstRegistrationAllowsOneAdmin(t *testing.T) {
+	handler, _ := newTestApp(t, "development")
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	const n = 8
+	var wg sync.WaitGroup
+	codes := make([]int, n)
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			payload := fmt.Sprintf(`{"email":"racer-%d@altas.dev","password":"correct-horse"}`, i)
+			res, err := http.Post(srv.URL+"/api/auth/register", "application/json", strings.NewReader(payload))
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer res.Body.Close()
+			_, _ = io.Copy(io.Discard, res.Body)
+			codes[i] = res.StatusCode
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+	}
+
+	created := 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusCreated:
+			created++
+		case http.StatusForbidden:
+		default:
+			t.Fatalf("unexpected status %d in %v", code, codes)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d accounts, want 1; codes %v", created, codes)
+	}
+}
+
+func TestLegacyDatabaseKeepsFirstUserAsAdmin(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "legacy.db")
+	seedLegacyUsers(t, path)
+
+	sqlDB, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	var firstAdmin, secondAdmin int
+	if err := sqlDB.QueryRow(`SELECT is_admin FROM users WHERE email = ?`, "first@altas.dev").Scan(&firstAdmin); err != nil {
+		t.Fatalf("first admin flag: %v", err)
+	}
+	if err := sqlDB.QueryRow(`SELECT is_admin FROM users WHERE email = ?`, "second@altas.dev").Scan(&secondAdmin); err != nil {
+		t.Fatalf("second admin flag: %v", err)
+	}
+	if firstAdmin != 1 || secondAdmin != 0 {
+		t.Fatalf("admin flags first=%d second=%d", firstAdmin, secondAdmin)
+	}
+
+	cfg := config.Config{
+		Env:          "development",
+		WebOrigin:    "http://127.0.0.1:5173",
+		SessionTTL:   time.Hour,
+		ResetTTL:     time.Hour,
+		ArgonMemory:  8 * 1024,
+		ArgonTime:    1,
+		ArgonThreads: 1,
+	}
+	handler := httpapi.New(cfg, sqlDB, log.New(io.Discard, "", 0))
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	res, data := postJSON(t, &http.Client{}, srv.URL+"/api/auth/register", map[string]string{
+		"email":    "third@altas.dev",
+		"password": "correct-horse",
+	})
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("legacy register status %d body %s", res.StatusCode, data)
+	}
+}
+
+func registrationOpen(t *testing.T, data []byte) bool {
+	t.Helper()
+	var body struct {
+		Open bool `json:"open"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("decode registration: %v body=%s", err, data)
+	}
+	return body.Open
+}
+
+func setCookie(res *http.Response, name string) string {
+	for _, c := range res.Cookies() {
+		if c.Name == name {
+			return c.Value
+		}
+	}
+	return ""
+}
+
+func sqlOpenLegacy(path string) (*sql.DB, error) {
+	return sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+}
+
+func seedLegacyUsers(t *testing.T, path string) {
+	t.Helper()
+	sqlDB, err := sqlOpenLegacy(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	_, err = sqlDB.Exec(`
+		CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES
+			('first', 'first@altas.dev', 'hash', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+			('second', 'second@altas.dev', 'hash', '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestMeRequiresSession(t *testing.T) {

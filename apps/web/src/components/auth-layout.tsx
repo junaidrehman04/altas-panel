@@ -32,8 +32,8 @@ export function AuthLayout({
           <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted">
             Altas is the panel that reads true server state from{" "}
             <span className="font-mono text-[13px] text-ink">/proc</span>, so a small VPS keeps its
-            memory for the workloads on it. v0.1.0 is the door into that plane: an account and a
-            revocable session.
+            memory for the workloads on it. v0.1.0 is the door into that plane: the first account
+            becomes the admin, then public registration closes.
           </p>
           <dl className="mt-8 grid grid-cols-3 divide-x divide-line border border-line">
             <Fact label="Source" value="/proc" />

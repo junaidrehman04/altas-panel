@@ -88,7 +88,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="mt-auto border-t border-line px-4 py-4">
           <p className="truncate font-mono text-xs text-ink">{user?.email}</p>
           <p className="mt-1 font-mono text-[10px] tracking-[0.14em] text-muted uppercase">
-            MIT · v0.1.0
+            {user?.is_admin ? "Admin · MIT · v0.1.0" : "MIT · v0.1.0"}
           </p>
         </div>
       </aside>

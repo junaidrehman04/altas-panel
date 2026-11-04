@@ -1,6 +1,6 @@
 # Contributing
 
-Altas Panel is MIT licensed. v0.1.0 is the authentication foundation and the empty dashboard shell. Fixes and small improvements to that surface are welcome. Servers, mail, telemetry, and production deploy tooling are out of scope until a later release opens them.
+Altas Panel is MIT licensed. v0.1.0 is the authentication foundation and the empty dashboard shell. The first registered account is the admin; after that, public registration stays closed. Fixes and small improvements to that surface are welcome. Servers, mail, telemetry, and production deploy tooling are out of scope until a later release opens them.
 
 ## Setup
 

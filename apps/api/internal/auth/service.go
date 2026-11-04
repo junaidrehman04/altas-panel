@@ -19,6 +19,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 	ErrInvalidToken       = errors.New("reset link is invalid or expired")
 	ErrUnauthenticated    = errors.New("unauthenticated")
+	ErrRegistrationClosed = errors.New("public registration is closed")
 )
 
 // ValidationError is a request the client can correct.
@@ -32,6 +33,7 @@ func (e ValidationError) Error() string { return e.Message }
 type User struct {
 	ID        string
 	Email     string
+	IsAdmin   bool
 	CreatedAt time.Time
 }
 
@@ -89,14 +91,36 @@ func (s *Service) Register(ctx context.Context, email, password string) (User, S
 	if err := validatePassword(password); err != nil {
 		return User{}, Session{}, err
 	}
+	open, err := s.RegistrationOpen(ctx)
+	if err != nil {
+		return User{}, Session{}, err
+	}
+	if !open {
+		return User{}, Session{}, ErrRegistrationClosed
+	}
 	hash, err := HashPassword(password, s.params)
 	if err != nil {
 		return User{}, Session{}, err
 	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, Session{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	open, err = registrationOpen(ctx, tx)
+	if err != nil {
+		return User{}, Session{}, err
+	}
+	if !open {
+		return User{}, Session{}, ErrRegistrationClosed
+	}
+
 	now := s.now().Truncate(time.Second)
-	user := User{ID: newID(), Email: email, CreatedAt: now}
-	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+	user := User{ID: newID(), Email: email, IsAdmin: true, CreatedAt: now}
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO users (id, email, password_hash, is_admin, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)`,
 		user.ID, user.Email, hash, formatTime(now), formatTime(now),
 	)
 	if err != nil {
@@ -105,11 +129,31 @@ func (s *Service) Register(ctx context.Context, email, password string) (User, S
 		}
 		return User{}, Session{}, err
 	}
+	if err := tx.Commit(); err != nil {
+		return User{}, Session{}, err
+	}
 	sess, err := s.createSession(ctx, user.ID)
 	if err != nil {
 		return User{}, Session{}, err
 	}
 	return user, sess, nil
+}
+
+// RegistrationOpen reports whether public registration can still create the first admin.
+func (s *Service) RegistrationOpen(ctx context.Context) (bool, error) {
+	return registrationOpen(ctx, s.db)
+}
+
+type queryRower interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func registrationOpen(ctx context.Context, q queryRower) (bool, error) {
+	var n int
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		return false, err
+	}
+	return n == 0, nil
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (User, Session, error) {
@@ -122,9 +166,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (User, Sess
 	}
 	var user User
 	var hash, created string
+	var admin int
 	err = s.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, created_at FROM users WHERE email = ?`, email,
-	).Scan(&user.ID, &user.Email, &hash, &created)
+		`SELECT id, email, password_hash, is_admin, created_at FROM users WHERE email = ?`, email,
+	).Scan(&user.ID, &user.Email, &hash, &admin, &created)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_, _ = VerifyPassword(password, s.dummy)
@@ -132,6 +177,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (User, Sess
 		}
 		return User{}, Session{}, err
 	}
+	user.IsAdmin = admin != 0
 	user.CreatedAt, err = parseTime(created)
 	if err != nil {
 		return User{}, Session{}, err
@@ -168,18 +214,20 @@ func (s *Service) UserFromSession(ctx context.Context, raw string) (User, error)
 	}
 	var user User
 	var created string
+	var admin int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.created_at
+		SELECT u.id, u.email, u.is_admin, u.created_at
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
-	`, hashToken(raw), formatTime(s.now())).Scan(&user.ID, &user.Email, &created)
+	`, hashToken(raw), formatTime(s.now())).Scan(&user.ID, &user.Email, &admin, &created)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrUnauthenticated
 		}
 		return User{}, err
 	}
+	user.IsAdmin = admin != 0
 	user.CreatedAt, err = parseTime(created)
 	if err != nil {
 		return User{}, err

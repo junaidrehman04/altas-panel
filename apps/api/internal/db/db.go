@@ -16,7 +16,7 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
 	dsn := fmt.Sprintf(
-		"file:%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)",
+		"file:%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_txlock=immediate",
 		filepath.ToSlash(path),
 	)
 	sqlDB, err := sql.Open("sqlite", dsn)
@@ -33,7 +33,56 @@ func Open(path string) (*sql.DB, error) {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	if err := ensureAdminColumn(sqlDB); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("migrate database: %w", err)
+	}
 	return sqlDB, nil
+}
+
+// ensureAdminColumn adds is_admin to databases created before the first-admin
+// gate and marks the earliest account as the panel admin.
+func ensureAdminColumn(sqlDB *sql.DB) error {
+	rows, err := sqlDB.Query(`PRAGMA table_info(users)`)
+	if err != nil {
+		return fmt.Errorf("inspect users: %w", err)
+	}
+	defer rows.Close()
+
+	found := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, colType string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk); err != nil {
+			return fmt.Errorf("inspect users: %w", err)
+		}
+		if name == "is_admin" {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("inspect users: %w", err)
+	}
+	if !found {
+		if _, err := sqlDB.Exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add is_admin: %w", err)
+		}
+	}
+	_, err = sqlDB.Exec(`
+		UPDATE users
+		SET is_admin = 1
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE is_admin = 1)
+		  AND id = (
+		    SELECT id FROM users
+		    ORDER BY created_at ASC, rowid ASC
+		    LIMIT 1
+		  )
+	`)
+	if err != nil {
+		return fmt.Errorf("promote first admin: %w", err)
+	}
+	return nil
 }
 
 const schema = `
@@ -41,6 +90,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  is_admin INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

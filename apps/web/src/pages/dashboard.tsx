@@ -26,8 +26,12 @@ export function DashboardPage() {
       <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Signed in.</h1>
       <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-muted">
         This shell is the v0.1.0 control plane for{" "}
-        <span className="break-all text-ink">{user.email}</span>. Servers, mail, and true-state
-        telemetry are later releases. The account and the session are here.
+        <span className="break-all text-ink">{user.email}</span>.
+        {user.is_admin
+          ? " This account is the panel admin, so public registration is closed."
+          : null}{" "}
+        Servers, mail, and true-state telemetry are later releases. The account and the session are
+        here.
       </p>
       <dl className="mt-8 grid gap-px border border-line bg-line sm:grid-cols-3">
         <Stat label="Session" value="Live" live />
