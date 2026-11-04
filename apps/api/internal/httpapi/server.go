@@ -18,6 +18,8 @@ import (
 
 const sessionCookie = "altas_session"
 
+const registrationClosedError = "Public registration is closed. The first account is the panel admin; further accounts will be invite-only."
+
 type handler struct {
 	cfg config.Config
 	svc *auth.Service
@@ -45,6 +47,7 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/api/health", h.health)
+	r.Get("/api/auth/registration", h.registration)
 	r.Post("/api/auth/register", h.register)
 	r.Post("/api/auth/login", h.login)
 	r.Post("/api/auth/logout", h.logout)
@@ -56,6 +59,15 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *handler) registration(w http.ResponseWriter, r *http.Request) {
+	open, err := h.svc.RegistrationOpen(r.Context())
+	if err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"open": open})
 }
 
 func (h *handler) register(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +168,8 @@ func (h *handler) writeAuthError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &validation):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": validation.Message})
+	case errors.Is(err, auth.ErrRegistrationClosed):
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": registrationClosedError})
 	case errors.Is(err, auth.ErrEmailTaken):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "An account with that email already exists"})
 	case errors.Is(err, auth.ErrInvalidCredentials):
@@ -208,6 +222,7 @@ func userJSON(user auth.User) map[string]any {
 		"user": map[string]any{
 			"id":         user.ID,
 			"email":      user.Email,
+			"is_admin":   user.IsAdmin,
 			"created_at": user.CreatedAt.UTC().Format(time.RFC3339),
 		},
 	}

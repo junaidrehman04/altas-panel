@@ -5,9 +5,11 @@ import { EmailField, FormError, PasswordField } from "../components/fields"
 import { Button } from "../components/ui/button"
 import { ApiError } from "../lib/api"
 import { useAuth } from "../lib/auth"
+import { useRegistration } from "../lib/registration"
 
 export function LoginPage() {
   const { login } = useAuth()
+  const registration = useRegistration()
   const navigate = useNavigate()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -37,12 +39,18 @@ export function LoginPage() {
       title="Sign in"
       lede="Use the email and password for this panel. The session stays in this browser until you log out."
       footer={
-        <>
-          No account yet?{" "}
-          <Link to="/register" className="text-accent">
-            Create an account
-          </Link>
-        </>
+        registration === "closed" ? (
+          <>Public registration is closed. The first account is the admin.</>
+        ) : registration === "loading" ? (
+          <>Checking registration</>
+        ) : (
+          <>
+            No account yet?{" "}
+            <Link to="/register" className="text-accent">
+              {registration === "open" ? "Create the admin account" : "Create an account"}
+            </Link>
+          </>
+        )
       }
     >
       <form className="grid gap-4" onSubmit={onSubmit} noValidate>
