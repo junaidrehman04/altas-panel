@@ -22,6 +22,8 @@ function useDesktop() {
 
 const links = [
   { to: "/dashboard", label: "Overview" },
+  { to: "/metrics", label: "Metrics" },
+  { to: "/analytics", label: "Analytics" },
   { to: "/stacks", label: "Stacks" },
 ]
 

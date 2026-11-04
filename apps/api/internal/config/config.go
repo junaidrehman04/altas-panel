@@ -26,6 +26,9 @@ type Config struct {
 	DockerProbe  bool
 	DockerSocket string
 	ProjectsRoot string
+	MetricsEvery time.Duration
+	GeoIPDB      string
+	AccessLog    string
 }
 
 func Load() Config {
@@ -44,7 +47,18 @@ func Load() Config {
 		DockerProbe:  boolEnv("ALTAS_DOCKER_PROBE", false),
 		DockerSocket: strings.TrimSpace(os.Getenv("ALTAS_DOCKER_SOCKET")),
 		ProjectsRoot: getenv("ALTAS_PROJECTS_ROOT", "/var/lib/altas/projects"),
+		MetricsEvery: metricsInterval(),
+		GeoIPDB:      strings.TrimSpace(os.Getenv("ALTAS_GEOIP_DB")),
+		AccessLog:    strings.TrimSpace(os.Getenv("ALTAS_ACCESS_LOG")),
 	}
+}
+
+func metricsInterval() time.Duration {
+	every := durationEnv("ALTAS_METRICS_INTERVAL", 15*time.Second)
+	if every < 5*time.Second || every > 5*time.Minute {
+		return 15 * time.Second
+	}
+	return every
 }
 
 func getenv(key, fallback string) string {

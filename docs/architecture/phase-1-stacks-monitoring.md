@@ -127,17 +127,17 @@ Docker `--format '{{.ID}}'` is intentionally rejected. The Compose probe talks t
 
 ## 6. Analytics
 
-Not implemented. The pipeline, when it exists, is collectors writing rollups into the same SQLite file. It is not a Prometheus or ClickHouse deployment.
+Shipped after the v0.2.0-dev foundation. The design and the routes are [analytics-metrics.md](analytics-metrics.md).
 
-Planned shape:
+The rules from this phase still hold:
 
-- One row per project or container per time bucket, with request count and bytes
-- GeoIP from a local database, keyed by a truncated address: IPv4 `/24`, IPv6 `/48`
-- The raw client address is not stored. Truncation happens before insert
-- Default retention is 30 days, then the rollup rows are deleted
-- Per-project and per-container filters use the stack id, not a free-form query
+- Collectors write rollups into the same SQLite file. There is no Prometheus or ClickHouse deployment
+- GeoIP comes from an optional local database. The client address is truncated to IPv4 `/24` or IPv6 `/48` before lookup or hashing
+- The raw client address is not stored
+- Retention is fixed. Older buckets are deleted
+- Per-project filters use the project id, not a free-form query
 
-No collector, table, or GeoIP file ships in v0.2.0-dev.
+No GeoIP database file is shipped with the panel. The access-log tail is off unless the operator sets a path.
 
 ## 7. Malware
 
@@ -192,7 +192,7 @@ The API container starts as root only long enough to `chown` the data volume, th
 - Auto-update, planned next and not in this release: settings toggle, GitHub Releases check, checksum verification, safe restart, and rollback. It applies after install, once `get.altaspanel.tech` and the updater have both shipped
 - Create, start, and stop containers from the Compose, Laravel, and Next.js templates
 - File manager CRUD UI on top of the jail
-- Live geo traffic rollups
+- A push API for traffic from outside the panel. The access-log tail is the file hook, and it stays off by default
 - Running ClamAV or hash/process checks, still without auto-delete
 - Multi-server, domains, mail, and the AI Server Doctor
 - Marketing site updates, which live in a separate repository

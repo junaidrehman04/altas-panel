@@ -1,21 +1,25 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/junaidrehman04/altas/apps/api/internal/analytics"
 	"github.com/junaidrehman04/altas/apps/api/internal/auth"
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
 	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
 	"github.com/junaidrehman04/altas/apps/api/internal/stacks"
+	"github.com/junaidrehman04/altas/apps/api/internal/window"
 )
 
 const sessionCookie = "altas_session"
@@ -23,11 +27,13 @@ const sessionCookie = "altas_session"
 const registrationClosedError = "Public registration is closed. The first account is the panel admin; further accounts will be invite-only."
 
 type handler struct {
-	cfg     config.Config
-	svc     *auth.Service
-	log     *log.Logger
-	metrics *metrics.Collector
-	probe   stacks.Probe
+	cfg       config.Config
+	svc       *auth.Service
+	log       *log.Logger
+	metrics   *metrics.Collector
+	hostStore *metrics.Store
+	traffic   *analytics.Recorder
+	probe     stacks.Probe
 }
 
 // New builds the HTTP API. logger receives the development password-reset URL.
@@ -44,16 +50,19 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 		panic(err)
 	}
 	h := &handler{
-		cfg:     cfg,
-		svc:     svc,
-		log:     logger,
-		metrics: metrics.NewCollector(cfg.HostProc, cfg.HostRoot),
-		probe:   stacks.NewProbe(cfg.DockerProbe, cfg.DockerSocket),
+		cfg:       cfg,
+		svc:       svc,
+		log:       logger,
+		metrics:   metrics.NewCollector(cfg.HostProc, cfg.HostRoot),
+		hostStore: metrics.NewStore(sqlDB),
+		traffic:   analytics.NewRecorder(sqlDB, analytics.OpenLocator(cfg.GeoIPDB, logger)),
+		probe:     stacks.NewProbe(cfg.DockerProbe, cfg.DockerSocket),
 	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	r.Use(h.track)
 	r.Use(middleware.Recoverer)
 
 	r.Get("/api/health", h.health)
@@ -65,6 +74,8 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 	r.Post("/api/auth/reset-password", h.reset)
 	r.Get("/api/me", h.me)
 	r.Get("/api/metrics/host", h.hostMetrics)
+	r.Get("/api/metrics/host/series", h.hostSeries)
+	r.Get("/api/analytics/summary", h.analyticsSummary)
 	r.Get("/api/stacks", h.stackCatalog)
 	r.Get("/api/stacks/compose", h.composeProjects)
 	return r
@@ -184,6 +195,117 @@ func (h *handler) hostMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snap)
+}
+
+func (h *handler) hostSeries(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.currentUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	span, err := window.Parse(r.URL.Query().Get("range"), time.Now())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "range must be live, 24h, 7d, 30d, or month"})
+		return
+	}
+	series, err := h.hostStore.Series(r.Context(), span)
+	if err != nil {
+		h.log.Printf("metrics series: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "something went wrong"})
+		return
+	}
+	writeJSON(w, http.StatusOK, series)
+}
+
+func (h *handler) analyticsSummary(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.currentUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	span, err := window.Parse(r.URL.Query().Get("range"), time.Now())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "range must be live, 24h, 7d, 30d, or month"})
+		return
+	}
+	project, ok := projectFilter(r.URL.Query().Get("project"))
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "project id is invalid"})
+		return
+	}
+	summary, err := h.traffic.Summary(r.Context(), span, project)
+	if err != nil {
+		h.log.Printf("analytics: %v", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "something went wrong"})
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func projectFilter(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", true
+	}
+	project := analytics.SanitizeProject(raw)
+	if project == "" {
+		return "", false
+	}
+	return project, true
+}
+
+func (h *handler) track(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.traffic == nil || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		wrapped := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(wrapped, r)
+		status := wrapped.Status()
+		if status == 0 {
+			status = http.StatusOK
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		err := h.traffic.Record(ctx, analytics.Event{
+			At:         start,
+			Project:    requestProject(r),
+			Host:       r.Host,
+			App:        requestApp(r),
+			Path:       r.URL.Path,
+			Status:     status,
+			Bytes:      int64(wrapped.BytesWritten()),
+			Latency:    time.Since(start),
+			HasLatency: true,
+			RemoteIP:   remoteIP(r),
+			UserAgent:  r.UserAgent(),
+		})
+		if err != nil {
+			h.log.Printf("analytics: record failed")
+		}
+	})
+}
+
+func requestProject(r *http.Request) string {
+	if project := analytics.SanitizeProject(r.Header.Get("X-Altas-Project")); project != "" {
+		return project
+	}
+	return "panel"
+}
+
+func requestApp(r *http.Request) string {
+	if app := analytics.SanitizeProject(r.Header.Get("X-Altas-App")); app != "" {
+		return app
+	}
+	return "panel"
+}
+
+func remoteIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return host
 }
 
 func (h *handler) stackCatalog(w http.ResponseWriter, r *http.Request) {

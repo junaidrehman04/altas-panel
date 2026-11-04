@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLoadHostAndDockerDefaults(t *testing.T) {
 	t.Setenv("ALTAS_ADDR", ":9090")
@@ -25,5 +28,23 @@ func TestLoadHostAndDockerDefaults(t *testing.T) {
 	t.Setenv("ALTAS_DOCKER_PROBE", "maybe")
 	if Load().DockerProbe {
 		t.Fatal("unknown probe value enabled the probe")
+	}
+}
+
+func TestLoadAnalyticsDefaults(t *testing.T) {
+	t.Setenv("ALTAS_GEOIP_DB", "")
+	t.Setenv("ALTAS_ACCESS_LOG", "")
+	t.Setenv("ALTAS_METRICS_INTERVAL", "")
+	cfg := Load()
+	if cfg.GeoIPDB != "" || cfg.AccessLog != "" || cfg.MetricsEvery != 15*time.Second {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+	t.Setenv("ALTAS_METRICS_INTERVAL", "1s")
+	if Load().MetricsEvery != 15*time.Second {
+		t.Fatal("short interval was accepted")
+	}
+	t.Setenv("ALTAS_METRICS_INTERVAL", "30s")
+	if Load().MetricsEvery != 30*time.Second {
+		t.Fatal("30s interval was rejected")
 	}
 }
