@@ -1,0 +1,48 @@
+# Local development containers. Not the production privilege model:
+# the API container runs the Go toolchain as root so it can rebuild.
+# Use: docker compose -f docker-compose.dev.yml up --build
+
+name: altas-dev
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    image: altas-api:dev
+    working_dir: /src
+    command: ["go", "run", "./apps/api/cmd/server"]
+    environment:
+      ALTAS_ADDR: ":8080"
+      ALTAS_DB: /tmp/altas.db
+      ALTAS_ENV: development
+      ALTAS_WEB_ORIGIN: http://127.0.0.1:5173
+      ALTAS_HOST_PROC: /proc
+      ALTAS_HOST_ROOT: /
+      ALTAS_DOCKER_PROBE: "0"
+    volumes:
+      - .:/src
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: dev
+    image: altas-web:dev
+    working_dir: /src
+    entrypoint: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"]
+    environment:
+      ALTAS_API_ORIGIN: http://api:8080
+    volumes:
+      - ./apps/web:/src
+      - web-modules:/src/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  web-modules:

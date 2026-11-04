@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { Link } from "react-router-dom"
+import { panelVersion } from "../lib/version"
 import { Brand } from "./mark"
 import { ThemeToggle } from "./theme-toggle"
 
@@ -32,13 +33,13 @@ export function AuthLayout({
           <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted">
             Altas is the panel that reads true server state from{" "}
             <span className="font-mono text-[13px] text-ink">/proc</span>, so a small VPS keeps its
-            memory for the workloads on it. v0.1.0 is the door into that plane: the first account
-            becomes the admin, then public registration closes.
+            memory for the workloads on it. {panelVersion} reads this host. The first account becomes
+            the admin, then public registration closes.
           </p>
           <dl className="mt-8 grid grid-cols-3 divide-x divide-line border border-line">
             <Fact label="Source" value="/proc" />
-            <Fact label="Target" value="<18MB" />
-            <Fact label="Release" value="v0.1.0" />
+            <Fact label="Agent" value="<20MB" />
+            <Fact label="Release" value={panelVersion} />
           </dl>
         </section>
         <section className="corner border border-line bg-card p-6 sm:p-8">

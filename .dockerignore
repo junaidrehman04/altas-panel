@@ -1,0 +1,13 @@
+.git
+**/.env
+!**/.env.example
+**/*.db
+**/*.db-wal
+**/*.db-shm
+apps/web/node_modules
+apps/web/dist
+apps/api/data
+data
+bin
+coverage.out
+*.local

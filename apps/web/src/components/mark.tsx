@@ -1,3 +1,4 @@
+import { panelVersion } from "../lib/version"
 import { cn } from "../lib/utils"
 
 export function Mark({ className }: { className?: string }) {
@@ -18,7 +19,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
       <span className="text-[17px] font-semibold tracking-tight">Altas</span>
       {compact ? null : (
         <span className="hidden border border-line px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
-          PANEL v0.1.0
+          PANEL {panelVersion}
         </span>
       )}
     </span>
