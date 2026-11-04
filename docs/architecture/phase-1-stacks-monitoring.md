@@ -170,6 +170,12 @@ Deploy of the panel itself:
 
 `get.altaspanel.tech` is still the planned installer host. The script is not published and the endpoint is not live. Compose and `go run` are the install paths that work today.
 
+```bash
+curl -fsSL https://get.altaspanel.tech | sudo bash
+```
+
+Auto-update is planned next and is not implemented here. After that installer ships, an update applies only to an already installed panel: a settings toggle, a GitHub Releases check, checksum verification, a safe restart, and rollback if the new build does not come up.
+
 The API container starts as root only long enough to `chown` the data volume, then `exec`s the server as `altas`. Reset URLs are not logged when `ALTAS_ENV=production`.
 
 ## This release
@@ -183,6 +189,7 @@ The API container starts as root only long enough to `chown` the data volume, th
 
 ## Later releases
 
+- Auto-update, planned next and not in this release: settings toggle, GitHub Releases check, checksum verification, safe restart, and rollback. It applies after install, once `get.altaspanel.tech` and the updater have both shipped
 - Create, start, and stop containers from the Compose, Laravel, and Next.js templates
 - File manager CRUD UI on top of the jail
 - Live geo traffic rollups

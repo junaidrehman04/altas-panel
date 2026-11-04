@@ -22,3 +22,4 @@ Unreleased foundation for stacks and true-state monitoring.
 - Geo traffic analytics
 - Malware scanning beyond the hook
 - `get.altaspanel.tech` installer
+- Auto-update (settings toggle, GitHub Releases check, checksum verify, safe restart, rollback). Planned next, not implemented

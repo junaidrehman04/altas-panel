@@ -32,7 +32,7 @@ Altas reads true server state from `/proc`. Cache is not reported as memory full
 curl -fsSL https://get.altaspanel.tech | sudo bash
 ```
 
-Until the one-liner is live, run the panel with Docker Compose or from source.
+Until the one-liner is live, run the panel with Docker Compose or from source. Auto-update is not part of this release. Once it ships, it applies only after that install: a settings toggle checks GitHub Releases, verifies the checksum, restarts safely, and rolls back if the new build does not come up.
 
 ### Docker Compose
 
@@ -90,6 +90,7 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | Read-only local Compose inventory | Implemented, off by default |
 | Path jail and command allowlist | Implemented |
 | Report-only malware hook (no auto-delete, ClamAV not executed) | Implemented |
+| Auto-update (settings toggle, GitHub Releases check, checksum verify, safe restart, rollback) | Coming (planned next) |
 | Container create / start / stop from templates | Coming |
 | File manager | Coming |
 | Analytics and geo traffic | Coming |
