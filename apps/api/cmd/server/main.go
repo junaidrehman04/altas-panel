@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/junaidrehman04/altas/apps/api/internal/analytics"
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
 	"github.com/junaidrehman04/altas/apps/api/internal/db"
 	"github.com/junaidrehman04/altas/apps/api/internal/httpapi"
+	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
 )
 
 func main() {
@@ -29,6 +31,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go api.RunMaintenance(ctx)
+	go metrics.Sample(ctx, metrics.NewCollector(cfg.HostProc, cfg.HostRoot), metrics.NewStore(sqlDB), cfg.MetricsEvery, logger)
+	if cfg.AccessLog != "" {
+		go analytics.Follow(ctx, cfg.AccessLog, analytics.NewRecorder(sqlDB, analytics.OpenLocator(cfg.GeoIPDB, logger)), logger)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

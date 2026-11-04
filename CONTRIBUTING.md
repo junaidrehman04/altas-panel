@@ -1,8 +1,8 @@
 # Contributing
 
-Altas Panel is MIT licensed. v0.2.0-dev keeps the authentication foundation and adds local host metrics, the stack registry, and Compose deploy of the panel. The first registered account is the admin; after that, public registration stays closed. The design, including work that is still out of scope, is `docs/architecture/phase-1-stacks-monitoring.md`.
+Altas Panel is MIT licensed. v0.3.0-dev keeps the authentication foundation, local host metrics, the stack registry, and Compose deploy, and adds SQLite history for host metrics and panel traffic. The first registered account is the admin; after that, public registration stays closed. The design is `docs/architecture/phase-1-stacks-monitoring.md` and `docs/architecture/analytics-metrics.md`.
 
-Fixes to auth, metrics, the jail, and the Compose files are welcome. Do not add container create/start/stop, a file manager UI, geo analytics, or a malware scanner that deletes files unless a release opens that work. Do not add a Prometheus stack or other heavy monitoring dependencies.
+Fixes to auth, metrics, analytics rollups, the jail, and the Compose files are welcome. Do not add container create/start/stop, a file manager UI, or a malware scanner that deletes files unless a release opens that work. Do not add a Prometheus stack or other heavy monitoring dependencies. Do not store raw client addresses.
 
 ## Setup
 
