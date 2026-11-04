@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { NavLink } from "react-router-dom"
 import { useAuth } from "../lib/auth"
+import { panelVersion } from "../lib/version"
 import { cn } from "../lib/utils"
 import { Brand } from "./mark"
 import { ThemeToggle } from "./theme-toggle"
@@ -19,7 +20,12 @@ function useDesktop() {
   return desktop
 }
 
-export function DashboardLayout({ children }: { children: ReactNode }) {
+const links = [
+  { to: "/dashboard", label: "Overview" },
+  { to: "/stacks", label: "Stacks" },
+]
+
+export function DashboardLayout({ section, children }: { section: string; children: ReactNode }) {
   const { user, logout } = useAuth()
   const desktop = useDesktop()
   const [open, setOpen] = useState(false)
@@ -68,27 +74,32 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="flex items-center border-b border-line px-4 py-4">
           <Brand compact />
         </div>
-        <div className="px-3 py-4">
+        <nav className="px-3 py-4" aria-label="Panel">
           <p className="px-2 font-mono text-[10px] tracking-[0.16em] text-muted uppercase">Panel</p>
-          <NavLink
-            to="/dashboard"
-            onClick={() => setOpen(false)}
-            className={({ isActive }) =>
-              cn(
-                "mt-2 flex items-center border-l-2 px-3 py-2 text-sm",
-                isActive
-                  ? "border-accent bg-base text-ink"
-                  : "border-transparent text-muted hover:text-ink",
-              )
-            }
-          >
-            Overview
-          </NavLink>
-        </div>
+          <div className="mt-2 grid">
+            {links.map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                onClick={() => setOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center border-l-2 px-3 py-2 text-sm",
+                    isActive
+                      ? "border-accent bg-base text-ink"
+                      : "border-transparent text-muted hover:text-ink",
+                  )
+                }
+              >
+                {link.label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
         <div className="mt-auto border-t border-line px-4 py-4">
           <p className="truncate font-mono text-xs text-ink">{user?.email}</p>
           <p className="mt-1 font-mono text-[10px] tracking-[0.14em] text-muted uppercase">
-            {user?.is_admin ? "Admin · MIT · v0.1.0" : "MIT · v0.1.0"}
+            {user?.is_admin ? `Admin · MIT · ${panelVersion}` : `MIT · ${panelVersion}`}
           </p>
         </div>
       </aside>
@@ -105,7 +116,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           >
             Menu
           </Button>
-          <p className="font-mono text-[11px] tracking-[0.16em] text-muted uppercase">Overview</p>
+          <p className="font-mono text-[11px] tracking-[0.16em] text-muted uppercase">{section}</p>
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
             <Button type="button" variant="outline" size="sm" onClick={onLogout} disabled={pending}>

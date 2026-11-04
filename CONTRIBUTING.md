@@ -1,6 +1,8 @@
 # Contributing
 
-Altas Panel is MIT licensed. v0.1.0 is the authentication foundation and the empty dashboard shell. The first registered account is the admin; after that, public registration stays closed. Fixes and small improvements to that surface are welcome. Servers, mail, telemetry, and production deploy tooling are out of scope until a later release opens them.
+Altas Panel is MIT licensed. v0.2.0-dev keeps the authentication foundation and adds local host metrics, the stack registry, and Compose deploy of the panel. The first registered account is the admin; after that, public registration stays closed. The design, including work that is still out of scope, is `docs/architecture/phase-1-stacks-monitoring.md`.
+
+Fixes to auth, metrics, the jail, and the Compose files are welcome. Do not add container create/start/stop, a file manager UI, geo analytics, or a malware scanner that deletes files unless a release opens that work. Do not add a Prometheus stack or other heavy monitoring dependencies.
 
 ## Setup
 

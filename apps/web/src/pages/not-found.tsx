@@ -21,7 +21,7 @@ export function NotFoundPage() {
       <main className="relative mx-auto max-w-lg px-4 py-16">
         <p className="font-mono text-[11px] tracking-[0.18em] text-signal uppercase">404</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">That page is not on this panel.</h1>
-        <p className="mt-3 text-sm text-muted">The address does not match a screen in v0.1.0.</p>
+        <p className="mt-3 text-sm text-muted">The address does not match a screen in this panel.</p>
         <Link to={loading ? "/login" : user ? "/dashboard" : "/login"} className="mt-6 inline-block text-sm text-accent">
           {user ? "Back to overview" : "Back to sign in"}
         </Link>

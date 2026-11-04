@@ -14,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/junaidrehman04/altas/apps/api/internal/auth"
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
+	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
+	"github.com/junaidrehman04/altas/apps/api/internal/stacks"
 )
 
 const sessionCookie = "altas_session"
@@ -21,9 +23,11 @@ const sessionCookie = "altas_session"
 const registrationClosedError = "Public registration is closed. The first account is the panel admin; further accounts will be invite-only."
 
 type handler struct {
-	cfg config.Config
-	svc *auth.Service
-	log *log.Logger
+	cfg     config.Config
+	svc     *auth.Service
+	log     *log.Logger
+	metrics *metrics.Collector
+	probe   stacks.Probe
 }
 
 // New builds the HTTP API. logger receives the development password-reset URL.
@@ -39,7 +43,13 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 	if err != nil {
 		panic(err)
 	}
-	h := &handler{cfg: cfg, svc: svc, log: logger}
+	h := &handler{
+		cfg:     cfg,
+		svc:     svc,
+		log:     logger,
+		metrics: metrics.NewCollector(cfg.HostProc, cfg.HostRoot),
+		probe:   stacks.NewProbe(cfg.DockerProbe, cfg.DockerSocket),
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -54,6 +64,9 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 	r.Post("/api/auth/forgot-password", h.forgot)
 	r.Post("/api/auth/reset-password", h.reset)
 	r.Get("/api/me", h.me)
+	r.Get("/api/metrics/host", h.hostMetrics)
+	r.Get("/api/stacks", h.stackCatalog)
+	r.Get("/api/stacks/compose", h.composeProjects)
 	return r
 }
 
@@ -151,16 +164,65 @@ func (h *handler) reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) me(w http.ResponseWriter, r *http.Request) {
-	raw := ""
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		raw = c.Value
-	}
-	user, err := h.svc.UserFromSession(r.Context(), raw)
+	user, err := h.currentUser(r)
 	if err != nil {
 		h.writeAuthError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, userJSON(user))
+}
+
+func (h *handler) hostMetrics(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.currentUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	snap, err := h.metrics.Snapshot()
+	if err != nil {
+		h.log.Printf("metrics: %v", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Host metrics are not available."})
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
+func (h *handler) stackCatalog(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.currentUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"projects_root": h.projectsRoot(),
+		"stacks":        stacks.Catalog(),
+	})
+}
+
+func (h *handler) composeProjects(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.currentUser(r); err != nil {
+		h.writeAuthError(w, err)
+		return
+	}
+	report, err := h.probe.Report(r.Context())
+	if err != nil {
+		h.log.Printf("docker probe: %v", err)
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (h *handler) currentUser(r *http.Request) (auth.User, error) {
+	raw := ""
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		raw = c.Value
+	}
+	return h.svc.UserFromSession(r.Context(), raw)
+}
+
+func (h *handler) projectsRoot() string {
+	root := strings.TrimSpace(h.cfg.ProjectsRoot)
+	if root == "" {
+		return "/var/lib/altas/projects"
+	}
+	return root
 }
 
 func (h *handler) writeAuthError(w http.ResponseWriter, err error) {

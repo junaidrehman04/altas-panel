@@ -25,6 +25,13 @@ import (
 
 func newTestApp(t *testing.T, env string) (http.Handler, *bytes.Buffer) {
 	t.Helper()
+	return newConfiguredApp(t, func(cfg *config.Config) {
+		cfg.Env = env
+	})
+}
+
+func newConfiguredApp(t *testing.T, mutate func(*config.Config)) (http.Handler, *bytes.Buffer) {
+	t.Helper()
 	dir := t.TempDir()
 	sqlDB, err := db.Open(filepath.Join(dir, "auth.db"))
 	if err != nil {
@@ -35,13 +42,16 @@ func newTestApp(t *testing.T, env string) (http.Handler, *bytes.Buffer) {
 	buf := &bytes.Buffer{}
 	logger := log.New(buf, "", 0)
 	cfg := config.Config{
-		Env:          env,
+		Env:          "development",
 		WebOrigin:    "http://127.0.0.1:5173",
 		SessionTTL:   24 * time.Hour,
 		ResetTTL:     time.Hour,
 		ArgonMemory:  8 * 1024,
 		ArgonTime:    1,
 		ArgonThreads: 1,
+	}
+	if mutate != nil {
+		mutate(&cfg)
 	}
 	return httpapi.New(cfg, sqlDB, logger), buf
 }
@@ -665,6 +675,59 @@ func seedLegacyUsers(t *testing.T, path string) {
 	`)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestResetRevokesExistingSessions(t *testing.T) {
+	handler, logs := newTestApp(t, "development")
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+	res, data := postJSON(t, client, srv.URL+"/api/auth/register", map[string]string{
+		"email":    "revoke-reset@altas.dev",
+		"password": "correct-horse",
+	})
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("register %d %s", res.StatusCode, data)
+	}
+
+	res, data = postJSON(t, client, srv.URL+"/api/auth/forgot-password", map[string]string{
+		"email": "revoke-reset@altas.dev",
+	})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("forgot %d %s", res.StatusCode, data)
+	}
+	match := regexp.MustCompile(`token=([A-Za-z0-9_-]+)`).FindStringSubmatch(logs.String())
+	if len(match) != 2 {
+		t.Fatalf("reset url not logged: %q", logs.String())
+	}
+	res, data = postJSON(t, client, srv.URL+"/api/auth/reset-password", map[string]string{
+		"token":    match[1],
+		"password": "new-pass-phrase",
+	})
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("reset %d %s", res.StatusCode, data)
+	}
+
+	res, data = getJSON(t, client, srv.URL+"/api/me")
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("session after reset status %d body %s", res.StatusCode, data)
+	}
+}
+
+func TestRegisterRejectsWrongContentType(t *testing.T) {
+	handler, _ := newTestApp(t, "development")
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"email":"plain@altas.dev","password":"correct-horse"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status %d body %s", rr.Code, rr.Body.String())
 	}
 }
 

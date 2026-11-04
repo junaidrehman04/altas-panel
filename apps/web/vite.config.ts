@@ -2,9 +2,11 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
+const apiOrigin = process.env.ALTAS_API_ORIGIN ?? "http://127.0.0.1:8080"
+
 const proxy = {
   "/api": {
-    target: "http://127.0.0.1:8080",
+    target: apiOrigin,
     changeOrigin: true,
   },
 }

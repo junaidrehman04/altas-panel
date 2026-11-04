@@ -9,6 +9,8 @@ import (
 // Config is the process configuration for the Altas API.
 // Defaults target a local development run: HTTP on :8080, SQLite under
 // data/, and password-reset links printed to stdout.
+// Host proc paths and the Docker socket come from the operator, never from
+// a request. The Docker probe is off unless ALTAS_DOCKER_PROBE is enabled.
 type Config struct {
 	Addr         string
 	DBPath       string
@@ -19,6 +21,11 @@ type Config struct {
 	ArgonMemory  uint32
 	ArgonTime    uint32
 	ArgonThreads uint8
+	HostProc     string
+	HostRoot     string
+	DockerProbe  bool
+	DockerSocket string
+	ProjectsRoot string
 }
 
 func Load() Config {
@@ -32,6 +39,11 @@ func Load() Config {
 		ArgonMemory:  19 * 1024,
 		ArgonTime:    2,
 		ArgonThreads: 1,
+		HostProc:     getenv("ALTAS_HOST_PROC", "/proc"),
+		HostRoot:     getenv("ALTAS_HOST_ROOT", "/"),
+		DockerProbe:  boolEnv("ALTAS_DOCKER_PROBE", false),
+		DockerSocket: strings.TrimSpace(os.Getenv("ALTAS_DOCKER_SOCKET")),
+		ProjectsRoot: getenv("ALTAS_PROJECTS_ROOT", "/var/lib/altas/projects"),
 	}
 }
 
@@ -40,6 +52,19 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func boolEnv(key string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "":
+		return fallback
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func durationEnv(key string, fallback time.Duration) time.Duration {

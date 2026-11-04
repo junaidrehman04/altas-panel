@@ -1,6 +1,6 @@
 # Altas Panel web
 
-Vite + React client for the v0.1.0 shell.
+Vite + React client for the v0.2.0-dev panel.
 
 ```bash
 npm install
