@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/junaidrehman04/altas/apps/api/internal/analytics"
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
 	"github.com/junaidrehman04/altas/apps/api/internal/db"
 	"github.com/junaidrehman04/altas/apps/api/internal/httpapi"
+	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
 )
 
 func main() {

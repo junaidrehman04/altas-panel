@@ -66,6 +66,14 @@ func Load() Config {
 	}
 }
 
+func metricsInterval() time.Duration {
+	every := durationEnv("ALTAS_METRICS_INTERVAL", 15*time.Second)
+	if every < 5*time.Second || every > 5*time.Minute {
+		return 15 * time.Second
+	}
+	return every
+}
+
 func getenv(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v

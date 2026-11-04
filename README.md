@@ -85,6 +85,10 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | First admin, then closed public registration | Implemented |
 | Docker Compose deploy of this panel | Implemented |
 | True-state host metrics from `/proc` (CPU, memory, disk, network) | Implemented |
+| Host metric history and the Metrics page (live, 24h, 7d, 30d, months) | Implemented |
+| Analytics page for panel traffic (requests, visitors, bandwidth, errors, p95, tops, devices) | Implemented |
+| Privacy-preserving geo (optional local MaxMind database; empty when unset) | Implemented |
+| Combined access-log tail (`ALTAS_ACCESS_LOG`) | Implemented, off by default |
 | One-shot monitoring agent (`apps/api/cmd/agent`) | Implemented |
 | Stack registry: Docker Compose, Laravel, Next.js | Implemented (list only) |
 | Read-only local Compose inventory | Implemented, off by default |
@@ -93,7 +97,7 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | Auto-update (settings toggle, GitHub Releases check, SHA256 verify, safe restart, rollback). Ed25519 runs when a public key is set; a project key is not pinned yet | Partially |
 | Container create / start / stop from templates | Coming |
 | File manager | Coming |
-| Analytics and geo traffic | Coming |
+| External access-log ingest beyond the optional file tail | Coming |
 | Malware scanning beyond the hook | Coming |
 | `get.altaspanel.tech` installer | Coming (not live) |
 | Multi-server | Coming |
@@ -103,7 +107,7 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 
 ## Screenshots
 
-Panel mockups for the product Altas is building. This repository now shows local host metrics and a stack registry. It does not yet match the multi-server, domain, and mail mockups. [altaspanel.tech](https://altaspanel.tech) will carry the public site; a preview build is at [altas-marketing.vercel.app](https://altas-marketing.vercel.app).
+Panel mockups for the product Altas is building. This repository now shows local host metrics, metric history, analytics for panel traffic, and a stack registry. It does not yet match the multi-server, domain, and mail mockups. [altaspanel.tech](https://altaspanel.tech) will carry the public site; a preview build is at [altas-marketing.vercel.app](https://altas-marketing.vercel.app).
 
 ### Overview
 
@@ -127,7 +131,7 @@ Panel mockups for the product Altas is building. This repository now shows local
 
 ## Quick start
 
-Follow [Docker Compose](#docker-compose) or [From source](#from-source). On a fresh database the register screen creates the admin account and signs you in. The overview polls host metrics. Stacks lists the registry and, unless you enable it, says the Docker probe is off. Sign out from the top bar. After the first account exists, the register screen closes and unauthenticated visits to the overview return to sign-in.
+Follow [Docker Compose](#docker-compose) or [From source](#from-source). On a fresh database the register screen creates the admin account and signs you in. The overview polls host metrics. Metrics charts that history. Analytics counts requests the panel handled and stays at zero until those requests exist. Stacks lists the registry and, unless you enable it, says the Docker probe is off. Sign out from the top bar. After the first account exists, the register screen closes and unauthenticated visits to the overview return to sign-in.
 
 ### Password reset without mail
 
@@ -175,7 +179,9 @@ apps/api/cmd/agent           One-shot host metrics reader
 apps/api/internal/auth       Argon2id passwords, sessions, reset tokens, first-admin gate
 apps/api/internal/httpapi    Chi routes
 apps/api/internal/db         SQLite schema (pure Go driver)
-apps/api/internal/metrics    /proc host summaries
+apps/api/internal/metrics    /proc host summaries and SQLite history
+apps/api/internal/analytics  Request rollups, privacy truncation, optional log tail
+apps/api/internal/window     Shared time-range parsing
 apps/api/internal/security   Path jail and command allowlist
 apps/api/internal/stacks     Stack registry and read-only Compose probe
 apps/api/internal/malware    Report-only scanner hook

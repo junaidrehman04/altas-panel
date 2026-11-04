@@ -1,6 +1,8 @@
 import { Navigate, Outlet, Route, Routes } from "react-router-dom"
 import { useAuth } from "./lib/auth"
+import { AnalyticsPage } from "./pages/analytics"
 import { DashboardPage } from "./pages/dashboard"
+import { MetricsPage } from "./pages/metrics"
 import { ForgotPasswordPage } from "./pages/forgot-password"
 import { LoginPage } from "./pages/login"
 import { NotFoundPage } from "./pages/not-found"
@@ -42,6 +44,8 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route element={<RequireAuth />}>
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/metrics" element={<MetricsPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/stacks" element={<StacksPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
