@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,8 @@ import (
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
 	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
 	"github.com/junaidrehman04/altas/apps/api/internal/stacks"
+	"github.com/junaidrehman04/altas/apps/api/internal/update"
+	"github.com/junaidrehman04/altas/apps/api/internal/version"
 )
 
 const sessionCookie = "altas_session"
@@ -28,10 +31,28 @@ type handler struct {
 	log     *log.Logger
 	metrics *metrics.Collector
 	probe   stacks.Probe
+	updates *update.Service
+	routes  http.Handler
+}
+
+// API is the panel HTTP service. RunMaintenance starts the slow update loop.
+type API struct {
+	h *handler
+}
+
+// ServeHTTP dispatches a panel request.
+func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	a.h.routes.ServeHTTP(w, r)
+}
+
+// RunMaintenance checks for an official release on the configured interval.
+// It does nothing until an admin turns auto-update on.
+func (a *API) RunMaintenance(ctx context.Context) {
+	a.h.updates.Run(ctx)
 }
 
 // New builds the HTTP API. logger receives the development password-reset URL.
-func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
+func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) *API {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -49,6 +70,19 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 		log:     logger,
 		metrics: metrics.NewCollector(cfg.HostProc, cfg.HostRoot),
 		probe:   stacks.NewProbe(cfg.DockerProbe, cfg.DockerSocket),
+		updates: update.New(sqlDB, update.Options{
+			Version:    version.Version,
+			Owner:      cfg.UpdateOwner,
+			Repo:       cfg.UpdateRepo,
+			BaseURL:    cfg.UpdateAPIBase,
+			Interval:   cfg.UpdateInterval,
+			Unit:       cfg.UpdateUnit,
+			Restart:    cfg.UpdateRestart,
+			BinaryPath: cfg.UpdateBinary,
+			PublicKey:  cfg.UpdatePubKey,
+			OS:         cfg.UpdateOS,
+			Arch:       cfg.UpdateArch,
+		}),
 	}
 
 	r := chi.NewRouter()
@@ -57,6 +91,7 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/api/health", h.health)
+	r.Get("/api/version", h.version)
 	r.Get("/api/auth/registration", h.registration)
 	r.Post("/api/auth/register", h.register)
 	r.Post("/api/auth/login", h.login)
@@ -67,11 +102,21 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) http.Handler {
 	r.Get("/api/metrics/host", h.hostMetrics)
 	r.Get("/api/stacks", h.stackCatalog)
 	r.Get("/api/stacks/compose", h.composeProjects)
-	return r
+	r.Get("/api/settings", h.getSettings)
+	r.Patch("/api/settings", h.patchSettings)
+	r.Post("/api/settings/updates/check", h.checkUpdates)
+	r.Post("/api/settings/updates/apply", h.applyUpdate)
+	r.Post("/api/settings/updates/rollback", h.rollbackUpdate)
+	h.routes = r
+	return &API{h: h}
 }
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
+}
+
+func (h *handler) version(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
 }
 
 func (h *handler) registration(w http.ResponseWriter, r *http.Request) {

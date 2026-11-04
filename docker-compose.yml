@@ -22,6 +22,8 @@ services:
       ALTAS_HOST_ROOT: /host/root
       ALTAS_PROJECTS_ROOT: /var/lib/altas/projects
       ALTAS_DOCKER_PROBE: "0"
+      # Auto-update installs a host binary and restarts systemd. Leave it off here.
+      # `docker compose restart api` restarts this image. It does not change it.
     volumes:
       - altas-data:/data
       - /proc:/host/proc:ro

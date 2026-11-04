@@ -9,7 +9,7 @@ Ultra-lightweight open-source control panel for a 1GB VPS and a 64-core dedicate
 
 Altas reads true server state from `/proc`. Cache is not reported as memory full. The monitoring agent is built to stay under 20MB resident. The panel API targets about 15–40MB idle, so the host keeps its RAM for the workloads on it. The same control plane is the path to multi-server, multi-domain, and multi-email operations, with an AI Server Doctor on top of that telemetry.
 
-**v0.2.0-dev** keeps the v0.1.0 door and adds the first room. The first account is still the admin, public registration still closes, and sessions and password reset are unchanged. The signed-in overview now shows this host's CPU, memory, disk, and network. Stack kinds are registered. Creating containers, the file manager, analytics, and malware scanning are not in this version. The design is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md).
+**v0.2.0-dev** keeps the v0.1.0 door and adds the first room. The first account is still the admin, public registration still closes, and sessions and password reset are unchanged. The signed-in overview now shows this host's CPU, memory, disk, and network. Stack kinds are registered. Admins can turn on auto-update from Settings. Creating containers, the file manager, analytics, and malware scanning are not in this version. The design is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md) and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## How Altas works
 
@@ -32,7 +32,7 @@ Altas reads true server state from `/proc`. Cache is not reported as memory full
 curl -fsSL https://get.altaspanel.tech | sudo bash
 ```
 
-Until the one-liner is live, run the panel with Docker Compose or from source. Auto-update is not part of this release. Once it ships, it applies only after that install: a settings toggle checks GitHub Releases, verifies the checksum, restarts safely, and rolls back if the new build does not come up.
+Until the one-liner is live, run the panel with Docker Compose or from source. Auto-update applies after that install, once the installer and this updater are both in use. It stays off until an admin enables it. A check reads GitHub Releases for `junaidrehman04/altas-panel`, requires the SHA256 from that release's checksum file, writes the binary only, restarts the `altas-panel` systemd unit, and can roll back to the previous binary. Details are in [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ### Docker Compose
 
@@ -90,7 +90,7 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | Read-only local Compose inventory | Implemented, off by default |
 | Path jail and command allowlist | Implemented |
 | Report-only malware hook (no auto-delete, ClamAV not executed) | Implemented |
-| Auto-update (settings toggle, GitHub Releases check, checksum verify, safe restart, rollback) | Coming (planned next) |
+| Auto-update (settings toggle, GitHub Releases check, SHA256 verify, safe restart, rollback). Ed25519 runs when a public key is set; a project key is not pinned yet | Partially |
 | Container create / start / stop from templates | Coming |
 | File manager | Coming |
 | Analytics and geo traffic | Coming |
@@ -154,7 +154,7 @@ Most panels do not leave public registration open. Altas does not either, after 
 
 True state means reading the kernel, not a second runtime parked beside it. `/proc` separates application RAM from buffer and cache, which is the difference between "the box is full" and "the page cache is doing its job." The monitoring agent target stays under 20MB resident. The API target is about 15–40MB idle. Multi-server comes later: many hosts, one plane, still that small.
 
-v0.2.0-dev reads the local host, registers stack kinds, and deploys the panel with Compose. The locked design, including what is deliberately not built yet, is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md).
+v0.2.0-dev reads the local host, registers stack kinds, deploys the panel with Compose, and can update an installed binary from official GitHub Releases. The foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). The updater is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## Checks
 
@@ -179,6 +179,8 @@ apps/api/internal/metrics    /proc host summaries
 apps/api/internal/security   Path jail and command allowlist
 apps/api/internal/stacks     Stack registry and read-only Compose probe
 apps/api/internal/malware    Report-only scanner hook
+apps/api/internal/update     Official release check, checksum, install, rollback
+apps/api/internal/version    Build version string
 apps/web                     Vite + React + Tailwind shell
 docker-compose.yml           Production-style panel deploy
 docker-compose.dev.yml       Dev containers
@@ -205,8 +207,17 @@ The API reads its environment directly. See `.env.example`.
 | `ALTAS_PROJECTS_ROOT` | `/var/lib/altas/projects` | Future project jail. Not written yet |
 | `ALTAS_DOCKER_PROBE` | off | `1` / `true` / `yes` / `on` lists local Compose projects |
 | `ALTAS_DOCKER_SOCKET` | empty | Optional Docker socket. Empty uses the default paths |
+| `ALTAS_UPDATE_OWNER` | `junaidrehman04` | GitHub owner for release checks. Invalid names fall back to the default |
+| `ALTAS_UPDATE_REPO` | `altas-panel` | GitHub repository. Invalid names fall back to the default |
+| `ALTAS_UPDATE_INTERVAL` | `12h` | Time between scheduled checks. Values below 6h become 6h. Values above 24h become 24h |
+| `ALTAS_UPDATE_UNIT` | `altas-panel` | systemd unit restarted after a successful install |
+| `ALTAS_UPDATE_RESTART` | `systemd` | `systemd` runs `systemctl restart`. `none` replaces the file and does not restart it |
+| `ALTAS_UPDATE_BINARY` | this process | Absolute path of the binary to replace |
+| `ALTAS_UPDATE_PUBKEY` | empty | Hex Ed25519 public key. Empty keeps the SHA256 checksum as the gate |
 
 `ALTAS_DOCKER_PROBE` accepts only those on values and `0` / `false` / `no` / `off`. Anything else leaves the probe off.
+
+The release API host is always `https://api.github.com`. There is no setting that points updates at another URL. Scheduled checks do not run until an admin enables auto-update. Check now and Apply are limited to once a minute. For Compose, leave auto-update off and restart the image with `docker compose restart api`. That restarts the container. It does not replace the image.
 
 ## How sign-in works
 

@@ -14,6 +14,7 @@ Unreleased foundation for stacks and true-state monitoring.
 - Optional read-only Docker Compose inventory (`ALTAS_DOCKER_PROBE`, off by default)
 - Report-only malware hook. Auto-delete is refused. ClamAV is not executed
 - Docker Compose files for a production-style panel deploy and a dev stack
+- Admin settings for auto-update, off by default: GitHub Releases check, SHA256 verification, atomic binary replace, systemd restart, and rollback. Ed25519 verification runs when `ALTAS_UPDATE_PUBKEY` is set. A project public key is not pinned yet
 
 ### Not in this version
 
@@ -22,4 +23,4 @@ Unreleased foundation for stacks and true-state monitoring.
 - Geo traffic analytics
 - Malware scanning beyond the hook
 - `get.altaspanel.tech` installer
-- Auto-update (settings toggle, GitHub Releases check, checksum verify, safe restart, rollback). Planned next, not implemented
+- A pinned Ed25519 project key for release signatures
