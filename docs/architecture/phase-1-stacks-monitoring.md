@@ -174,7 +174,7 @@ Deploy of the panel itself:
 curl -fsSL https://get.altaspanel.tech | sudo bash
 ```
 
-Auto-update is planned next and is not implemented here. After that installer ships, an update applies only to an already installed panel: a settings toggle, a GitHub Releases check, checksum verification, a safe restart, and rollback if the new build does not come up.
+Auto-update is implemented in [auto-update.md](auto-update.md). It stays off until an admin enables it, and it applies to an already installed binary. The one-liner above is still the install path that is not live yet.
 
 The API container starts as root only long enough to `chown` the data volume, then `exec`s the server as `altas`. Reset URLs are not logged when `ALTAS_ENV=production`.
 
@@ -185,11 +185,11 @@ The API container starts as root only long enough to `chown` the data volume, th
 - Path jail, command allowlist, and tests that reject traversal and injection
 - Stack registry and the optional read-only Compose probe
 - Malware hook that cannot auto-delete
+- Auto-update for an installed binary, off by default. See [auto-update.md](auto-update.md)
 - README status table updated to match the above
 
 ## Later releases
 
-- Auto-update, planned next and not in this release: settings toggle, GitHub Releases check, checksum verification, safe restart, and rollback. It applies after install, once `get.altaspanel.tech` and the updater have both shipped
 - Create, start, and stop containers from the Compose, Laravel, and Next.js templates
 - File manager CRUD UI on top of the jail
 - A push API for traffic from outside the panel. The access-log tail is the file hook, and it stays off by default
@@ -206,3 +206,4 @@ The API container starts as root only long enough to `chown` the data volume, th
 - No shell metacharacter is accepted by the allowlist
 - No user-supplied filesystem path is read, except through the jail helper, which no route calls yet
 - No secrets belong in the repository. `.env` is gitignored. `.env.example` has empty or local defaults only
+- Auto-update is off by default and accepts only the pinned GitHub Releases API. See [auto-update.md](auto-update.md)

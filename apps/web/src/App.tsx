@@ -8,6 +8,7 @@ import { LoginPage } from "./pages/login"
 import { NotFoundPage } from "./pages/not-found"
 import { RegisterPage } from "./pages/register"
 import { ResetPasswordPage } from "./pages/reset-password"
+import { SettingsPage } from "./pages/settings"
 import { StacksPage } from "./pages/stacks"
 
 function BootScreen() {
@@ -46,6 +47,7 @@ export default function App() {
         <Route path="/metrics" element={<MetricsPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/stacks" element={<StacksPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<NotFoundPage />} />

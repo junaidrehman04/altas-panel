@@ -31,20 +31,39 @@ func TestLoadHostAndDockerDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadAnalyticsDefaults(t *testing.T) {
-	t.Setenv("ALTAS_GEOIP_DB", "")
-	t.Setenv("ALTAS_ACCESS_LOG", "")
-	t.Setenv("ALTAS_METRICS_INTERVAL", "")
+func TestUpdateConfigIsPinnedAndRateLimited(t *testing.T) {
+	t.Setenv("ALTAS_UPDATE_OWNER", "")
+	t.Setenv("ALTAS_UPDATE_REPO", "")
+	t.Setenv("ALTAS_UPDATE_INTERVAL", "")
+	t.Setenv("ALTAS_UPDATE_UNIT", "")
+	t.Setenv("ALTAS_UPDATE_RESTART", "")
 	cfg := Load()
-	if cfg.GeoIPDB != "" || cfg.AccessLog != "" || cfg.MetricsEvery != 15*time.Second {
+	if cfg.UpdateOwner != "junaidrehman04" || cfg.UpdateRepo != "altas-panel" {
+		t.Fatalf("repo = %s/%s", cfg.UpdateOwner, cfg.UpdateRepo)
+	}
+	if cfg.UpdateAPIBase != "https://api.github.com" {
+		t.Fatalf("api base = %s", cfg.UpdateAPIBase)
+	}
+	if cfg.UpdateInterval != 12*time.Hour || cfg.UpdateUnit != "altas-panel" || cfg.UpdateRestart != "systemd" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
-	t.Setenv("ALTAS_METRICS_INTERVAL", "1s")
-	if Load().MetricsEvery != 15*time.Second {
-		t.Fatal("short interval was accepted")
+
+	t.Setenv("ALTAS_UPDATE_INTERVAL", "1m")
+	if Load().UpdateInterval != 6*time.Hour {
+		t.Fatalf("short interval = %s", Load().UpdateInterval)
 	}
-	t.Setenv("ALTAS_METRICS_INTERVAL", "30s")
-	if Load().MetricsEvery != 30*time.Second {
-		t.Fatal("30s interval was rejected")
+	t.Setenv("ALTAS_UPDATE_INTERVAL", "48h")
+	if Load().UpdateInterval != 24*time.Hour {
+		t.Fatalf("long interval = %s", Load().UpdateInterval)
+	}
+	t.Setenv("ALTAS_UPDATE_OWNER", "../etc")
+	t.Setenv("ALTAS_UPDATE_REPO", "altas-panel/../../secret")
+	cfg = Load()
+	if cfg.UpdateOwner != "junaidrehman04" || cfg.UpdateRepo != "altas-panel" {
+		t.Fatalf("escaped repo = %s/%s", cfg.UpdateOwner, cfg.UpdateRepo)
+	}
+	t.Setenv("ALTAS_UPDATE_API_BASE", "https://evil.example")
+	if Load().UpdateAPIBase != "https://api.github.com" {
+		t.Fatal("environment overrode the release API")
 	}
 }

@@ -1,5 +1,6 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { NavLink } from "react-router-dom"
+import { api } from "../lib/api"
 import { useAuth } from "../lib/auth"
 import { panelVersion } from "../lib/version"
 import { cn } from "../lib/utils"
@@ -21,18 +22,31 @@ function useDesktop() {
 }
 
 const links = [
-  { to: "/dashboard", label: "Overview" },
-  { to: "/metrics", label: "Metrics" },
-  { to: "/analytics", label: "Analytics" },
-  { to: "/stacks", label: "Stacks" },
+  { to: "/dashboard", label: "Overview", admin: false },
+  { to: "/stacks", label: "Stacks", admin: false },
+  { to: "/settings", label: "Settings", admin: true },
 ]
 
 export function DashboardLayout({ section, children }: { section: string; children: ReactNode }) {
   const { user, logout } = useAuth()
   const desktop = useDesktop()
   const [open, setOpen] = useState(false)
+  const [version, setVersion] = useState(panelVersion)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const alive = useRef(true)
+
+  useEffect(() => {
+    alive.current = true
+    api<{ version: string }>("/api/version")
+      .then((data) => {
+        if (alive.current && data.version) setVersion(data.version)
+      })
+      .catch(() => {})
+    return () => {
+      alive.current = false
+    }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -79,29 +93,31 @@ export function DashboardLayout({ section, children }: { section: string; childr
         <nav className="px-3 py-4" aria-label="Panel">
           <p className="px-2 font-mono text-[10px] tracking-[0.16em] text-muted uppercase">Panel</p>
           <div className="mt-2 grid">
-            {links.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center border-l-2 px-3 py-2 text-sm",
-                    isActive
-                      ? "border-accent bg-base text-ink"
-                      : "border-transparent text-muted hover:text-ink",
-                  )
-                }
-              >
-                {link.label}
-              </NavLink>
-            ))}
+            {links
+              .filter((link) => !link.admin || user?.is_admin)
+              .map((link) => (
+                <NavLink
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center border-l-2 px-3 py-2 text-sm",
+                      isActive
+                        ? "border-accent bg-base text-ink"
+                        : "border-transparent text-muted hover:text-ink",
+                    )
+                  }
+                >
+                  {link.label}
+                </NavLink>
+              ))}
           </div>
         </nav>
         <div className="mt-auto border-t border-line px-4 py-4">
           <p className="truncate font-mono text-xs text-ink">{user?.email}</p>
           <p className="mt-1 font-mono text-[10px] tracking-[0.14em] text-muted uppercase">
-            {user?.is_admin ? `Admin · MIT · ${panelVersion}` : `MIT · ${panelVersion}`}
+            {user?.is_admin ? `Admin · MIT · ${version}` : `MIT · ${version}`}
           </p>
         </div>
       </aside>

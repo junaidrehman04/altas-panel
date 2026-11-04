@@ -114,72 +114,9 @@ CREATE TABLE IF NOT EXISTS password_resets (
   used_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS host_metric_buckets (
-  resolution TEXT NOT NULL,
-  bucket_start INTEGER NOT NULL,
-  cpu_sum REAL NOT NULL DEFAULT 0,
-  cpu_samples INTEGER NOT NULL DEFAULT 0,
-  mem_pct_sum REAL NOT NULL DEFAULT 0,
-  mem_used_sum INTEGER NOT NULL DEFAULT 0,
-  mem_total INTEGER NOT NULL DEFAULT 0,
-  disk_pct_sum REAL NOT NULL DEFAULT 0,
-  disk_used_sum INTEGER NOT NULL DEFAULT 0,
-  disk_total INTEGER NOT NULL DEFAULT 0,
-  disk_samples INTEGER NOT NULL DEFAULT 0,
-  rx_sum REAL NOT NULL DEFAULT 0,
-  tx_sum REAL NOT NULL DEFAULT 0,
-  net_samples INTEGER NOT NULL DEFAULT 0,
-  samples INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (resolution, bucket_start)
-);
-
-CREATE TABLE IF NOT EXISTS analytics_meta (
+CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS analytics_buckets (
-  resolution TEXT NOT NULL,
-  bucket_start INTEGER NOT NULL,
-  project TEXT NOT NULL,
-  requests INTEGER NOT NULL DEFAULT 0,
-  errors INTEGER NOT NULL DEFAULT 0,
-  bytes INTEGER NOT NULL DEFAULT 0,
-  b0 INTEGER NOT NULL DEFAULT 0,
-  b1 INTEGER NOT NULL DEFAULT 0,
-  b2 INTEGER NOT NULL DEFAULT 0,
-  b3 INTEGER NOT NULL DEFAULT 0,
-  b4 INTEGER NOT NULL DEFAULT 0,
-  b5 INTEGER NOT NULL DEFAULT 0,
-  b6 INTEGER NOT NULL DEFAULT 0,
-  b7 INTEGER NOT NULL DEFAULT 0,
-  b8 INTEGER NOT NULL DEFAULT 0,
-  b9 INTEGER NOT NULL DEFAULT 0,
-  b10 INTEGER NOT NULL DEFAULT 0,
-  b11 INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (resolution, bucket_start, project)
-);
-
-CREATE TABLE IF NOT EXISTS analytics_dims (
-  resolution TEXT NOT NULL,
-  bucket_start INTEGER NOT NULL,
-  project TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  name TEXT NOT NULL,
-  requests INTEGER NOT NULL DEFAULT 0,
-  errors INTEGER NOT NULL DEFAULT 0,
-  bytes INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (resolution, bucket_start, project, kind, name)
-);
-
-CREATE INDEX IF NOT EXISTS analytics_dims_kind_idx
-  ON analytics_dims (resolution, kind, bucket_start);
-
-CREATE TABLE IF NOT EXISTS analytics_visitors (
-  scope TEXT NOT NULL,
-  bucket_start INTEGER NOT NULL,
-  project TEXT NOT NULL,
-  visitor_hash TEXT NOT NULL,
-  PRIMARY KEY (scope, bucket_start, project, visitor_hash)
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 `

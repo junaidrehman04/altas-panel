@@ -27,23 +27,19 @@ func main() {
 	}
 	defer sqlDB.Close()
 
+	api := httpapi.New(cfg, sqlDB, logger)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	go metrics.Sample(ctx, metrics.NewCollector(cfg.HostProc, cfg.HostRoot), metrics.NewStore(sqlDB), cfg.MetricsEvery, logger)
-	if cfg.AccessLog != "" {
-		go analytics.Follow(ctx, cfg.AccessLog, analytics.NewRecorder(sqlDB, analytics.OpenLocator(cfg.GeoIPDB, logger)), logger)
-	}
+	go api.RunMaintenance(ctx)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           httpapi.New(cfg, sqlDB, logger),
+		Handler:           api,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       20 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
