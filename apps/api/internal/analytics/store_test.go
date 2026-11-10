@@ -116,6 +116,8 @@ func TestGeoStaysEmptyWithoutDatabase(t *testing.T) {
 	ctx := context.Background()
 	rec := newTestRecorder(t, disabledLocator{})
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	// Prune follows this clock. The default wall clock deletes minute buckets after 48 hours.
+	rec.now = func() time.Time { return now }
 	err := rec.Record(ctx, Event{
 		At: now, Project: "panel", Host: "h.example", App: "panel", Path: "/",
 		Status: 200, Bytes: 10, Latency: 5 * time.Millisecond, HasLatency: true,
