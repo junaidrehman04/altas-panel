@@ -19,7 +19,10 @@ func TestHostSeriesAveragesAndEmpty(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	store := NewStore(sqlDB)
 
-	now := time.Date(2026, 11, 4, 12, 0, 30, 0, time.UTC)
+	// Minute buckets are kept for 48 hours, and the first write prunes against the wall clock.
+	// Stay inside the current minute so both samples share one bucket and survive that prune.
+	wall := time.Now().UTC()
+	now := time.Date(wall.Year(), wall.Month(), wall.Day(), wall.Hour(), wall.Minute(), 30, 0, time.UTC)
 	span, err := window.Parse("24h", now)
 	if err != nil {
 		t.Fatal(err)
