@@ -36,9 +36,10 @@ type Config struct {
 	UpdateAPIBase  string
 	UpdateOS       string
 	UpdateArch     string
-	MetricsEvery time.Duration
-	GeoIPDB      string
-	AccessLog    string
+	MetricsEvery   time.Duration
+	GeoIPDB        string
+	AccessLog      string
+	Org            string
 }
 
 func Load() Config {
@@ -66,10 +67,19 @@ func Load() Config {
 		UpdatePubKey:   strings.TrimSpace(os.Getenv("ALTAS_UPDATE_PUBKEY")),
 		// The release API is pinned. ALTAS_UPDATE_API_BASE is ignored on purpose.
 		UpdateAPIBase: "https://api.github.com",
-		MetricsEvery: metricsInterval(),
-		GeoIPDB:      strings.TrimSpace(os.Getenv("ALTAS_GEOIP_DB")),
-		AccessLog:    strings.TrimSpace(os.Getenv("ALTAS_ACCESS_LOG")),
+		MetricsEvery:  metricsInterval(),
+		GeoIPDB:       strings.TrimSpace(os.Getenv("ALTAS_GEOIP_DB")),
+		AccessLog:     strings.TrimSpace(os.Getenv("ALTAS_ACCESS_LOG")),
+		Org:           orgEnv(),
 	}
+}
+
+func orgEnv() string {
+	value := strings.TrimSpace(os.Getenv("ALTAS_ORG"))
+	if value == "" || len(value) > 80 || strings.ContainsAny(value, "\r\n\x00") {
+		return ""
+	}
+	return value
 }
 
 func metricsInterval() time.Duration {

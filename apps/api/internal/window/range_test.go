@@ -16,6 +16,8 @@ func TestParseRanges(t *testing.T) {
 		monthly            bool
 		wantStart          time.Time
 	}{
+		{"1h", "15s", "1m", "h", false, now.Add(-time.Hour)},
+		{"6h", "1m", "1m", "h", false, now.Add(-6 * time.Hour)},
 		{"live", "15s", "1m", "h", false, now.Add(-15 * time.Minute)},
 		{" 24H ", "1m", "1m", "h", false, now.Add(-24 * time.Hour)},
 		{"7d", "1h", "1h", "d", false, now.Add(-7 * 24 * time.Hour)},
@@ -47,7 +49,7 @@ func TestParseRanges(t *testing.T) {
 
 func TestParseRejectsUnknownRange(t *testing.T) {
 	now := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
-	for _, in := range []string{"", "1h", "year", "live;drop", "../etc", "month\n"} {
+	for _, in := range []string{"", "year", "live;drop", "../etc", "month\n"} {
 		if _, err := Parse(in, now); err == nil {
 			t.Fatalf("accepted %q", in)
 		}

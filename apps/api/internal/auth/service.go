@@ -29,18 +29,38 @@ type ValidationError struct {
 
 func (e ValidationError) Error() string { return e.Message }
 
-// User is a panel account. Password hashes never leave the service.
+// User is a panel account. Password hashes and TOTP secrets never leave the service.
 type User struct {
-	ID        string
-	Email     string
-	IsAdmin   bool
-	CreatedAt time.Time
+	ID              string
+	Email           string
+	IsAdmin         bool
+	CreatedAt       time.Time
+	TOTPEnabled     bool
+	LastSignInAt    time.Time
+	LastSignInPlace string
 }
 
 // Session is the raw cookie value plus its expiry. Only the hash is stored.
+// Persistent is false when the browser should drop the cookie at the end of the session.
 type Session struct {
-	Raw       string
-	ExpiresAt time.Time
+	Raw        string
+	ExpiresAt  time.Time
+	Persistent bool
+}
+
+// LoginOptions carries the sign-in choices that are not the password.
+type LoginOptions struct {
+	Remember   *bool
+	TrustToken string
+	Place      string
+}
+
+// LoginOutcome is a completed session or a pending authenticator challenge.
+type LoginOutcome struct {
+	User         User
+	Session      Session
+	TOTPRequired bool
+	Challenge    string
 }
 
 // Service owns register, login, logout, and password reset.
@@ -132,7 +152,7 @@ func (s *Service) Register(ctx context.Context, email, password string) (User, S
 	if err := tx.Commit(); err != nil {
 		return User{}, Session{}, err
 	}
-	sess, err := s.createSession(ctx, user.ID)
+	sess, err := s.createSession(ctx, user.ID, s.sessionTTL, true)
 	if err != nil {
 		return User{}, Session{}, err
 	}
@@ -156,44 +176,77 @@ func registrationOpen(ctx context.Context, q queryRower) (bool, error) {
 	return n == 0, nil
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (User, Session, error) {
+func (s *Service) Login(ctx context.Context, email, password string, opt LoginOptions) (LoginOutcome, error) {
 	email, err := normalizeEmail(email)
 	if err != nil {
-		return User{}, Session{}, err
+		return LoginOutcome{}, err
 	}
 	if strings.TrimSpace(password) == "" {
-		return User{}, Session{}, ValidationError{Message: "Password is required"}
+		return LoginOutcome{}, ValidationError{Message: "Password is required"}
 	}
+	if locked, retry, err := s.loginLocked(ctx, email); err != nil {
+		return LoginOutcome{}, err
+	} else if locked {
+		return LoginOutcome{}, LockedError{RetryAfter: retry}
+	}
+
 	var user User
-	var hash, created string
-	var admin int
-	err = s.db.QueryRowContext(ctx,
-		`SELECT id, email, password_hash, is_admin, created_at FROM users WHERE email = ?`, email,
-	).Scan(&user.ID, &user.Email, &hash, &admin, &created)
+	var hash, created, secret, lastAt, lastPlace string
+	var admin, totpOn int
+	err = s.db.QueryRowContext(ctx, `
+		SELECT id, email, password_hash, is_admin, created_at, totp_enabled, totp_secret, last_sign_in_at, last_sign_in_place
+		FROM users WHERE email = ?
+	`, email).Scan(&user.ID, &user.Email, &hash, &admin, &created, &totpOn, &secret, &lastAt, &lastPlace)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			_, _ = VerifyPassword(password, s.dummy)
-			return User{}, Session{}, ErrInvalidCredentials
+			return LoginOutcome{}, s.noteLoginFailure(ctx, email)
 		}
-		return User{}, Session{}, err
+		return LoginOutcome{}, err
 	}
 	user.IsAdmin = admin != 0
+	user.TOTPEnabled = totpOn != 0 && strings.TrimSpace(secret) != ""
 	user.CreatedAt, err = parseTime(created)
 	if err != nil {
-		return User{}, Session{}, err
+		return LoginOutcome{}, err
 	}
+	user.LastSignInAt, user.LastSignInPlace = parseOptionalTime(lastAt), lastPlace
 	ok, err := VerifyPassword(password, hash)
 	if err != nil {
-		return User{}, Session{}, err
+		return LoginOutcome{}, err
 	}
 	if !ok {
-		return User{}, Session{}, ErrInvalidCredentials
+		_ = s.recordAuthEvent(ctx, "sign_in_failed", "Failed sign-in for "+email)
+		return LoginOutcome{}, s.noteLoginFailure(ctx, email)
 	}
-	sess, err := s.createSession(ctx, user.ID)
+	if err := s.clearLoginFailures(ctx, email); err != nil {
+		return LoginOutcome{}, err
+	}
+	ttl, persistent := sessionPolicy(s.sessionTTL, opt.Remember)
+	if user.TOTPEnabled {
+		if s.trustValid(ctx, opt.TrustToken, user.ID) {
+			return s.finishLogin(ctx, user, ttl, persistent, opt.Place)
+		}
+		challenge, err := s.beginChallenge(ctx, user.ID, ttl, persistent, opt.Remember != nil && *opt.Remember, opt.Place)
+		if err != nil {
+			return LoginOutcome{}, err
+		}
+		return LoginOutcome{User: user, TOTPRequired: true, Challenge: challenge}, nil
+	}
+	return s.finishLogin(ctx, user, ttl, persistent, opt.Place)
+}
+
+func (s *Service) finishLogin(ctx context.Context, user User, ttl time.Duration, persistent bool, place string) (LoginOutcome, error) {
+	sess, err := s.createSession(ctx, user.ID, ttl, persistent)
 	if err != nil {
-		return User{}, Session{}, err
+		return LoginOutcome{}, err
 	}
-	return user, sess, nil
+	if err := s.recordSignIn(ctx, user.ID, place); err != nil {
+		return LoginOutcome{}, err
+	}
+	user.LastSignInAt = s.now()
+	user.LastSignInPlace = place
+	return LoginOutcome{User: user, Session: sess}, nil
 }
 
 // Logout revokes the presented session. A missing cookie is a no-op.
@@ -213,14 +266,16 @@ func (s *Service) UserFromSession(ctx context.Context, raw string) (User, error)
 		return User{}, ErrUnauthenticated
 	}
 	var user User
-	var created string
-	var admin int
+	var created, lastAt, lastPlace string
+	var admin, totpOn int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.is_admin, u.created_at
+		SELECT u.id, u.email, u.is_admin, u.created_at, u.totp_enabled, u.last_sign_in_at, u.last_sign_in_place
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
-	`, hashToken(raw), formatTime(s.now())).Scan(&user.ID, &user.Email, &admin, &created)
+	`, hashToken(raw), formatTime(s.now())).Scan(
+		&user.ID, &user.Email, &admin, &created, &totpOn, &lastAt, &lastPlace,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrUnauthenticated
@@ -228,10 +283,13 @@ func (s *Service) UserFromSession(ctx context.Context, raw string) (User, error)
 		return User{}, err
 	}
 	user.IsAdmin = admin != 0
+	user.TOTPEnabled = totpOn != 0
 	user.CreatedAt, err = parseTime(created)
 	if err != nil {
 		return User{}, err
 	}
+	user.LastSignInAt = parseOptionalTime(lastAt)
+	user.LastSignInPlace = lastPlace
 	return user, nil
 }
 
@@ -331,13 +389,16 @@ func (s *Service) ResetPassword(ctx context.Context, rawToken, password string) 
 	return tx.Commit()
 }
 
-func (s *Service) createSession(ctx context.Context, userID string) (Session, error) {
+func (s *Service) createSession(ctx context.Context, userID string, ttl time.Duration, persistent bool) (Session, error) {
+	if ttl <= 0 {
+		ttl = s.sessionTTL
+	}
 	raw, err := newToken()
 	if err != nil {
 		return Session{}, err
 	}
 	now := s.now()
-	exp := now.Add(s.sessionTTL).Truncate(time.Second)
+	exp := now.Add(ttl).Truncate(time.Second)
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`,
 		hashToken(raw), userID, formatTime(now), formatTime(exp),
@@ -345,7 +406,31 @@ func (s *Service) createSession(ctx context.Context, userID string) (Session, er
 	if err != nil {
 		return Session{}, err
 	}
-	return Session{Raw: raw, ExpiresAt: exp}, nil
+	return Session{Raw: raw, ExpiresAt: exp, Persistent: persistent}, nil
+}
+
+func sessionPolicy(fallback time.Duration, remember *bool) (time.Duration, bool) {
+	if remember == nil {
+		if fallback <= 0 {
+			fallback = 7 * 24 * time.Hour
+		}
+		return fallback, true
+	}
+	if *remember {
+		return 14 * 24 * time.Hour, true
+	}
+	return 12 * time.Hour, false
+}
+
+func parseOptionalTime(v string) time.Time {
+	if strings.TrimSpace(v) == "" {
+		return time.Time{}
+	}
+	t, err := parseTime(v)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 func normalizeEmail(email string) (string, error) {

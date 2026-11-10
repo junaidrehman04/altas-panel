@@ -40,6 +40,11 @@ func (c *Collector) collect() (Snapshot, error) {
 			AvailableBytes: mem.Available,
 			FreeBytes:      mem.Free,
 			CacheBytes:     mem.Buffers + mem.Cached,
+			BuffersBytes:   mem.Buffers,
+			CachedBytes:    mem.Cached,
+			AnonBytes:      anonBytes(mem),
+			SwapTotalBytes: mem.SwapTotal,
+			SwapUsedBytes:  swapUsed(mem),
 		},
 		Disks:   []DiskStats{},
 		Network: []NetStats{},
@@ -56,6 +61,21 @@ func (c *Collector) collect() (Snapshot, error) {
 	if c.prevCPU != nil {
 		pct := cpuUsage(*c.prevCPU, sample)
 		snap.CPU.UsagePercent = &pct
+		if len(c.prevCPU.PerCore) == len(sample.PerCore) && len(sample.PerCore) > 0 {
+			cores := make([]float64, len(sample.PerCore))
+			for i := range sample.PerCore {
+				if busy, ok := coreBusyPercent(c.prevCPU.PerCore[i], sample.PerCore[i]); ok {
+					cores[i] = busy
+				}
+			}
+			snap.CPU.PerCore = cores
+		}
+		if wait, ok := cpuPartPercent(*c.prevCPU, sample, func(sample cpuSample) uint64 { return sample.IOWait }); ok {
+			snap.CPU.IOWaitPercent = &wait
+		}
+		if steal, ok := cpuPartPercent(*c.prevCPU, sample, func(sample cpuSample) uint64 { return sample.Steal }); ok {
+			snap.CPU.StealPercent = &steal
+		}
 	}
 	c.prevCPU = &sample
 
@@ -122,6 +142,24 @@ func (c *Collector) networkRates(ifaces []netCounters, now time.Time) []NetStats
 	return out
 }
 
+func anonBytes(mem memInfo) uint64 {
+	if mem.Anon > 0 {
+		return mem.Anon
+	}
+	used := mem.Free + mem.Buffers + mem.Cached
+	if mem.Total >= used {
+		return mem.Total - used
+	}
+	return 0
+}
+
+func swapUsed(mem memInfo) uint64 {
+	if mem.SwapTotal >= mem.SwapFree {
+		return mem.SwapTotal - mem.SwapFree
+	}
+	return 0
+}
+
 func rate(prev, curr uint64, seconds float64) float64 {
 	if curr < prev || seconds <= 0 {
 		return 0
@@ -133,17 +171,19 @@ func (c *Collector) diskStats(mounts []mountEntry) []DiskStats {
 	out := make([]DiskStats, 0, len(mounts))
 	for _, mnt := range mounts {
 		path := underRoot(c.host, mnt.Mount)
-		total, used, avail, err := statPath(path)
+		total, used, avail, inode, err := statPathFull(path)
 		if err != nil || total == 0 {
 			continue
 		}
 		out = append(out, DiskStats{
-			Mount:          mnt.Mount,
-			Filesystem:     mnt.FSType,
-			TotalBytes:     total,
-			UsedBytes:      used,
-			AvailableBytes: avail,
-			UsedPercent:    usedPercent(used, avail),
+			Mount:            mnt.Mount,
+			Filesystem:       mnt.FSType,
+			Device:           mnt.Device,
+			TotalBytes:       total,
+			UsedBytes:        used,
+			AvailableBytes:   avail,
+			UsedPercent:      usedPercent(used, avail),
+			InodeUsedPercent: inode,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

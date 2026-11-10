@@ -16,6 +16,7 @@ type cpuSample struct {
 	SoftIRQ uint64
 	Steal   uint64
 	Cores   int
+	PerCore []cpuSample
 }
 
 func (c cpuSample) total() uint64 {
@@ -43,6 +44,62 @@ func cpuUsage(prev, curr cpuSample) float64 {
 		return 100
 	}
 	return used
+}
+
+func cpuFromFields(values []uint64) cpuSample {
+	var sample cpuSample
+	if len(values) > 0 {
+		sample.User = values[0]
+	}
+	if len(values) > 1 {
+		sample.Nice = values[1]
+	}
+	if len(values) > 2 {
+		sample.System = values[2]
+	}
+	if len(values) > 3 {
+		sample.Idle = values[3]
+	}
+	if len(values) > 4 {
+		sample.IOWait = values[4]
+	}
+	if len(values) > 5 {
+		sample.IRQ = values[5]
+	}
+	if len(values) > 6 {
+		sample.SoftIRQ = values[6]
+	}
+	if len(values) > 7 {
+		sample.Steal = values[7]
+	}
+	return sample
+}
+
+// cpuPartPercent is one /proc/stat field as a percent of elapsed jiffies.
+// ok is false until two comparable samples exist.
+func cpuPartPercent(prev, curr cpuSample, part func(cpuSample) uint64) (float64, bool) {
+	if curr.total() < prev.total() || part(curr) < part(prev) {
+		return 0, false
+	}
+	dt := curr.total() - prev.total()
+	if dt == 0 {
+		return 0, false
+	}
+	value := float64(part(curr)-part(prev)) / float64(dt) * 100
+	if value < 0 {
+		return 0, false
+	}
+	if value > 100 {
+		value = 100
+	}
+	return value, true
+}
+
+// coreBusyPercent is user + nice + system + irq + softirq, excluding idle, iowait, and steal.
+func coreBusyPercent(prev, curr cpuSample) (float64, bool) {
+	return cpuPartPercent(prev, curr, func(sample cpuSample) uint64 {
+		return sample.User + sample.Nice + sample.System + sample.IRQ + sample.SoftIRQ
+	})
 }
 
 func parseProcStat(data string) (cpuSample, error) {
@@ -83,6 +140,9 @@ func parseProcStat(data string) (cpuSample, error) {
 		}
 		if len(name) > 3 && strings.HasPrefix(name, "cpu") && isDigits(name[3:]) {
 			sample.Cores++
+			if values, err := parseU64s(fields[1:]); err == nil {
+				sample.PerCore = append(sample.PerCore, cpuFromFields(values))
+			}
 		}
 	}
 	if !found {
@@ -97,6 +157,9 @@ type memInfo struct {
 	Available uint64
 	Buffers   uint64
 	Cached    uint64
+	Anon      uint64
+	SwapTotal uint64
+	SwapFree  uint64
 }
 
 func parseMemInfo(data string) (memInfo, error) {
@@ -122,10 +185,13 @@ func parseMemInfo(data string) (memInfo, error) {
 		return memInfo{}, fmt.Errorf("meminfo: missing MemTotal")
 	}
 	info := memInfo{
-		Total:   total,
-		Free:    values["MemFree"],
-		Buffers: values["Buffers"],
-		Cached:  values["Cached"],
+		Total:     total,
+		Free:      values["MemFree"],
+		Buffers:   values["Buffers"],
+		Cached:    values["Cached"],
+		Anon:      values["AnonPages"],
+		SwapTotal: values["SwapTotal"],
+		SwapFree:  values["SwapFree"],
 	}
 	if avail, ok := values["MemAvailable"]; ok {
 		info.Available = avail
