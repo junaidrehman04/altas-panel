@@ -9,7 +9,7 @@ Ultra-lightweight open-source control panel for a 1GB VPS and a 64-core dedicate
 
 Altas reads true server state from `/proc`. Cache is not reported as memory full. The monitoring agent is built to stay under 20MB resident. The panel API targets about 15–40MB idle, so the host keeps its RAM for the workloads on it. The same control plane is the path to multi-server, multi-domain, and multi-email operations, with an AI Server Doctor on top of that telemetry.
 
-**v0.2.0-dev** keeps the v0.1.0 door and adds the first room. The first account is still the admin, public registration still closes, and sessions and password reset are unchanged. The signed-in overview now shows this host's CPU, memory, disk, and network. Stack kinds are registered. Admins can turn on auto-update from Settings. Creating containers, the file manager, analytics, and malware scanning are not in this version. The design is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md) and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+**v0.3.0-dev** keeps the first-admin gate and the v0.2.0-dev host snapshot, and adds history. Signed-in Metrics shows CPU, memory, disk, and network over live, 24 hour, 7 day, 30 day, and month windows. Analytics shows requests the panel handled: visitors, bandwidth, error rate, p95, top hosts, applications, paths, and device type. Locations stay empty until a local GeoIP database is configured. Admins can turn on auto-update from Settings. Creating containers, the file manager, and malware scanning are not in this version. The design is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## How Altas works
 
@@ -158,7 +158,7 @@ Most panels do not leave public registration open. Altas does not either, after 
 
 True state means reading the kernel, not a second runtime parked beside it. `/proc` separates application RAM from buffer and cache, which is the difference between "the box is full" and "the page cache is doing its job." The monitoring agent target stays under 20MB resident. The API target is about 15–40MB idle. Multi-server comes later: many hosts, one plane, still that small.
 
-v0.2.0-dev reads the local host, registers stack kinds, deploys the panel with Compose, and can update an installed binary from official GitHub Releases. The foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). The updater is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+v0.3.0-dev reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, and can update an installed binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## Checks
 
@@ -220,6 +220,9 @@ The API reads its environment directly. See `.env.example`.
 | `ALTAS_UPDATE_RESTART` | `systemd` | `systemd` runs `systemctl restart`. `none` replaces the file and does not restart it |
 | `ALTAS_UPDATE_BINARY` | this process | Absolute path of the binary to replace |
 | `ALTAS_UPDATE_PUBKEY` | empty | Hex Ed25519 public key. Empty keeps the SHA256 checksum as the gate |
+| `ALTAS_METRICS_INTERVAL` | `15s` | How often host history is sampled. Below 5s or above 5m falls back to 15s |
+| `ALTAS_GEOIP_DB` | empty | Optional MaxMind `.mmdb`, absolute path. Empty leaves countries and cities blank |
+| `ALTAS_ACCESS_LOG` | empty | Optional Combined access log to tail. Empty leaves external ingest off |
 
 `ALTAS_DOCKER_PROBE` accepts only those on values and `0` / `false` / `no` / `off`. Anything else leaves the probe off.
 

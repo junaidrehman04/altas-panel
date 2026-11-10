@@ -21,6 +21,7 @@ import (
 	"github.com/junaidrehman04/altas/apps/api/internal/stacks"
 	"github.com/junaidrehman04/altas/apps/api/internal/update"
 	"github.com/junaidrehman04/altas/apps/api/internal/version"
+	"github.com/junaidrehman04/altas/apps/api/internal/window"
 )
 
 const sessionCookie = "altas_session"
@@ -28,13 +29,15 @@ const sessionCookie = "altas_session"
 const registrationClosedError = "Public registration is closed. The first account is the panel admin; further accounts will be invite-only."
 
 type handler struct {
-	cfg     config.Config
-	svc     *auth.Service
-	log     *log.Logger
-	metrics *metrics.Collector
-	probe   stacks.Probe
-	updates *update.Service
-	routes  http.Handler
+	cfg       config.Config
+	svc       *auth.Service
+	log       *log.Logger
+	metrics   *metrics.Collector
+	hostStore *metrics.Store
+	traffic   *analytics.Recorder
+	probe     stacks.Probe
+	updates   *update.Service
+	routes    http.Handler
 }
 
 // API is the panel HTTP service. RunMaintenance starts the slow update loop.
@@ -67,11 +70,13 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) *API {
 		panic(err)
 	}
 	h := &handler{
-		cfg:     cfg,
-		svc:     svc,
-		log:     logger,
-		metrics: metrics.NewCollector(cfg.HostProc, cfg.HostRoot),
-		probe:   stacks.NewProbe(cfg.DockerProbe, cfg.DockerSocket),
+		cfg:       cfg,
+		svc:       svc,
+		log:       logger,
+		metrics:   metrics.NewCollector(cfg.HostProc, cfg.HostRoot),
+		hostStore: metrics.NewStore(sqlDB),
+		traffic:   analytics.NewRecorder(sqlDB, analytics.OpenLocator(cfg.GeoIPDB, logger)),
+		probe:     stacks.NewProbe(cfg.DockerProbe, cfg.DockerSocket),
 		updates: update.New(sqlDB, update.Options{
 			Version:    version.Version,
 			Owner:      cfg.UpdateOwner,

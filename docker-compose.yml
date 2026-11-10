@@ -24,6 +24,11 @@ services:
       ALTAS_DOCKER_PROBE: "0"
       # Auto-update installs a host binary and restarts systemd. Leave it off here.
       # `docker compose restart api` restarts this image. It does not change it.
+      ALTAS_METRICS_INTERVAL: 15s
+      # Optional. Mount a MaxMind .mmdb and set an absolute path. Missing leaves geo empty.
+      # ALTAS_GEOIP_DB: /data/GeoLite2-City.mmdb
+      # Optional Combined log tail. Off when unset. The path must be absolute and contain no "..".
+      # ALTAS_ACCESS_LOG: /var/log/nginx/access.log
     volumes:
       - altas-data:/data
       - /proc:/host/proc:ro
