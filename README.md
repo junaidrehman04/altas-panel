@@ -9,7 +9,7 @@ Ultra-lightweight open-source control panel for a 1GB VPS and a 64-core dedicate
 
 Altas reads true server state from `/proc`. Cache is not reported as memory full. The monitoring agent is built to stay under 20MB resident. The panel API targets about 15–40MB idle, so the host keeps its RAM for the workloads on it. The same control plane is the path to multi-server, multi-domain, and multi-email operations, with an AI Server Doctor on top of that telemetry.
 
-**v0.3.0-dev** keeps the first-admin gate and the v0.2.0-dev host snapshot, and adds history. Signed-in Metrics shows CPU, memory, disk, and network over live, 24 hour, 7 day, 30 day, and month windows. Analytics shows requests the panel handled: visitors, bandwidth, error rate, p95, top hosts, applications, paths, and device type. Locations stay empty until a local GeoIP database is configured. Admins can turn on auto-update from Settings. Creating containers, the file manager, and malware scanning are not in this version. The design is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+**v0.2.0** keeps the first-account admin gate and adds the monitoring shell: Edge Traffic, Projects & APM, and Hardware, in light and dark. Numbers come from this host. A missing source stays empty. Authenticator sign-in is real TOTP. WebAuthn is shown and does not sign anyone in. Admins reach auto-update from the command palette. The design notes are [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## How Altas works
 
@@ -81,57 +81,73 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 
 | Capability | Status |
 | --- | --- |
-| Accounts, sessions, password reset, signed-in shell | Implemented |
-| First admin, then closed public registration | Implemented |
-| Docker Compose deploy of this panel | Implemented |
-| True-state host metrics from `/proc` (CPU, memory, disk, network) | Implemented |
-| Host metric history and the Metrics page (live, 24h, 7d, 30d, months) | Implemented |
-| Analytics page for panel traffic (requests, visitors, bandwidth, errors, p95, tops, devices) | Implemented |
+| Accounts, sessions, password reset, first admin then closed registration | Implemented |
+| TOTP enrollment, recovery codes, six-digit sign-in, 15-minute lockout | Implemented |
+| 14-day “keep me signed in”, otherwise a browser session and a 12-hour server expiry | Implemented |
+| Edge, Projects & APM, and Hardware shell, light and dark, command palette, shortcuts | Implemented |
+| Notifications from host thresholds and sign-in events | Implemented |
+| True-state host metrics from `/proc` (CPU, memory composition, disk, network, per-core) | Implemented |
+| History for 1h, 6h, 24h, 7d, and 30d | Implemented |
+| Panel request rollups (requests, visitors, bytes, errors, p95, paths) | Implemented |
 | Privacy-preserving geo (optional local MaxMind database; empty when unset) | Implemented |
 | Combined access-log tail (`ALTAS_ACCESS_LOG`) | Implemented, off by default |
+| Read-only container list when a Docker socket is present | Implemented |
+| Listening sockets, deleted-open files, mdstat, NVMe sysfs, crontab and mail log when readable | Implemented |
+| IPMI, SMART wear, firewall rules, traffic classes, per-IP tables, queues, SQL, object cache | Empty until a real source exists |
+| WebAuthn / security key sign-in | Coming (the tab does not sign you in) |
 | One-shot monitoring agent (`apps/api/cmd/agent`) | Implemented |
 | Stack registry: Docker Compose, Laravel, Next.js | Implemented (list only) |
 | Read-only local Compose inventory | Implemented, off by default |
 | Path jail and command allowlist | Implemented |
 | Report-only malware hook (no auto-delete, ClamAV not executed) | Implemented |
-| Auto-update (settings toggle, GitHub Releases check, SHA256 verify, safe restart, rollback). Ed25519 runs when a public key is set; a project key is not pinned yet | Partially |
+| Auto-update from the command palette (Updates). Ed25519 runs when a public key is set; a project key is not pinned yet | Partially |
 | Container create / start / stop from templates | Coming |
 | File manager | Coming |
+| Multi-server host picker | Coming (this release shows the local host only) |
 | External access-log ingest beyond the optional file tail | Coming |
 | Malware scanning beyond the hook | Coming |
 | `get.altaspanel.tech` installer | Coming (not live) |
-| Multi-server | Coming |
 | Multi-domain and SSL | Coming |
 | Multi-email / mail suite (DKIM, SPF, DMARC) | Coming |
 | AI Server Doctor | Coming |
 
 ## Screenshots
 
-Panel mockups for the product Altas is building. This repository now shows local host metrics, metric history, analytics for panel traffic, and a stack registry. It does not yet match the multi-server, domain, and mail mockups. [altaspanel.tech](https://altaspanel.tech) will carry the public site; a preview build is at [altas-marketing.vercel.app](https://altas-marketing.vercel.app).
+These are the v0.2.0 panel on a live host. Empty panels are sources this machine does not have (no GeoIP database, no access-log classifier, no IPMI). The host name in the pictures is the machine that was running the panel.
 
-### Overview
+### Sign in
 
-![Altas overview in light mode, with CPU, RAM, disk, network, and a server list](docs/images/dashboard-light.jpg)
+![Sign in, light](docs/images/v020/app-login-light.png)
 
-![Altas overview in dark mode, with true uptime, true-state metrics, and a multi-server table](docs/images/dashboard-dark.jpg)
+![Authenticator step, light](docs/images/v020/app-2fa-light.png)
 
-### Server
+![Sign in, dark](docs/images/v020/app-login-dark.png)
 
-![Server detail in light mode](docs/images/server-detail-light.jpg)
+### Edge
 
-![Server detail in dark mode](docs/images/server-detail-dark.jpg)
+![Edge overview, light](docs/images/v020/app-edge-overview-light.png)
 
-### Domains
+![Edge overview, dark](docs/images/v020/app-edge-overview-dark.png)
 
-![Domains view in light mode](docs/images/domains-light.jpg)
+### Projects
 
-### Mail
+![Projects overview, light](docs/images/v020/app-apm-overview-light.png)
 
-![Mail view in light mode](docs/images/mail-light.jpg)
+![Projects overview, dark](docs/images/v020/app-apm-overview-dark.png)
+
+### Hardware
+
+![Hardware overview, light](docs/images/v020/app-hardware-overview-light.png)
+
+![Hardware overview, dark](docs/images/v020/app-hardware-overview-dark.png)
+
+![Notifications, dark](docs/images/v020/app-notifications-dark.png)
+
+Domains and mail in the older images under `docs/images/` are the later product direction. They are not screens in this release.
 
 ## Quick start
 
-Follow [Docker Compose](#docker-compose) or [From source](#from-source). On a fresh database the register screen creates the admin account and signs you in. The overview polls host metrics. Metrics charts that history. Analytics counts requests the panel handled and stays at zero until those requests exist. Stacks lists the registry and, unless you enable it, says the Docker probe is off. Sign out from the top bar. After the first account exists, the register screen closes and unauthenticated visits to the overview return to sign-in.
+Follow [Docker Compose](#docker-compose) or [From source](#from-source). On a fresh database, sign-in offers to create the admin account. After that, registration closes. The shell opens on Edge Traffic. Projects and Hardware are in the sidebar. `G` then `E`, `A`, or `H` jumps between them, and Ctrl/Cmd+K opens the command palette. Sign out is on the user row. History charts stay empty until the collector has two buckets in the selected range.
 
 ### Password reset without mail
 
@@ -152,13 +168,14 @@ Most panels do not leave public registration open. Altas does not either, after 
 - `GET /api/auth/registration` returns `{"open": true}` only while the user table is empty. The web UI hides the create-account form once it is closed.
 - Later accounts are invite-only. Admin-created users are not in this release.
 - Databases created before this gate gain an `is_admin` column on the next API start. The earliest account is marked admin, and public registration is closed.
-- Login, logout, session cookies, and password reset are unchanged. Reset still revokes every session for that account.
+- A password login can require a TOTP code after the account enrolls an authenticator. Five failures lock sign-in for 15 minutes. Reset still revokes every session for the account.
+- Keep me signed in for 14 days stores a 14-day session. Leaving it unchecked stores a 12-hour session and a cookie the browser drops when it closes. Omitting the field keeps `ALTAS_SESSION_TTL`.
 
 ## Architecture
 
 True state means reading the kernel, not a second runtime parked beside it. `/proc` separates application RAM from buffer and cache, which is the difference between "the box is full" and "the page cache is doing its job." The monitoring agent target stays under 20MB resident. The API target is about 15–40MB idle. Multi-server comes later: many hosts, one plane, still that small.
 
-v0.3.0-dev reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, and can update an installed binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+v0.2.0 reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, and can update an installed binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## Checks
 
@@ -206,7 +223,8 @@ The API reads its environment directly. See `.env.example`.
 | `ALTAS_DB` | `data/altas.db` | SQLite file, relative to the API working directory |
 | `ALTAS_ENV` | `development` | `production` stops printing reset URLs |
 | `ALTAS_WEB_ORIGIN` | `http://127.0.0.1:5173` | Origin used in the logged reset link |
-| `ALTAS_SESSION_TTL` | `168h` | Session lifetime |
+| `ALTAS_SESSION_TTL` | `168h` | Session lifetime when the client does not send `remember`. Checked “keep me signed in” is 14 days. Unchecked is 12 hours and a browser session cookie |
+| `ALTAS_ORG` | empty | Name in the sidebar. Empty uses the host name |
 | `ALTAS_RESET_TTL` | `1h` | Reset token lifetime |
 | `ALTAS_HOST_PROC` | `/proc` | Proc tree for host metrics |
 | `ALTAS_HOST_ROOT` | `/` | Prefix for disk mount points |

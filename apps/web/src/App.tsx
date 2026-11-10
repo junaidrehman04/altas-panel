@@ -1,56 +1,73 @@
-import { Navigate, Outlet, Route, Routes } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom"
+import { AuthScreen, type AuthNotice } from "./design/auth-screen"
+import { type Screen, type Theme } from "./design/shell"
+import { Workspace } from "./design/workspace"
 import { useAuth } from "./lib/auth"
-import { AnalyticsPage } from "./pages/analytics"
-import { DashboardPage } from "./pages/dashboard"
-import { MetricsPage } from "./pages/metrics"
-import { ForgotPasswordPage } from "./pages/forgot-password"
-import { LoginPage } from "./pages/login"
-import { NotFoundPage } from "./pages/not-found"
-import { RegisterPage } from "./pages/register"
-import { ResetPasswordPage } from "./pages/reset-password"
-import { SettingsPage } from "./pages/settings"
-import { StacksPage } from "./pages/stacks"
 
-function BootScreen() {
+function Boot() {
   return (
-    <div className="grid min-h-svh place-items-center bg-base text-ink">
-      <p className="font-mono text-[11px] tracking-[0.18em] text-muted uppercase">Checking session</p>
+    <div className="auth">
+      <main className="auth-main"><p className="auth-meta">Checking session</p></main>
     </div>
   )
 }
 
-function RequireAuth() {
-  const { user, loading } = useAuth()
-  if (loading) return <BootScreen />
-  if (!user) return <Navigate to="/login" replace />
-  return <Outlet />
+function useTheme() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem("altas-theme")
+    if (saved === "light" || saved === "dark") return saved
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+  })
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem("altas-theme", theme)
+  }, [theme])
+  return [theme, setTheme] as const
 }
 
-function GuestOnly() {
+function Guest() {
   const { user, loading } = useAuth()
-  if (loading) return <BootScreen />
-  if (user) return <Navigate to="/dashboard" replace />
-  return <Outlet />
+  const [theme, setTheme] = useTheme()
+  const [params] = useSearchParams()
+  const notice = (params.get("notice") === "expired" || params.get("notice") === "signedout" ? params.get("notice") : null) as AuthNotice
+  const location = useLocation()
+  if (loading) return <Boot />
+  if (user) return <Navigate to="/edge" replace />
+  return <AuthScreen key={location.pathname} theme={theme} setTheme={setTheme} notice={notice} />
+}
+
+function SignedIn() {
+  const { user, loading } = useAuth()
+  const [theme, setTheme] = useTheme()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const screen: Screen = location.pathname.startsWith("/apm") ? "apm" : location.pathname.startsWith("/hardware") ? "hardware" : location.pathname.startsWith("/updates") ? "updates" : "edge"
+  if (loading) return <Boot />
+  if (!user) return <Navigate to="/login" replace />
+  return (
+    <Workspace
+      theme={theme}
+      setTheme={setTheme}
+      screen={screen}
+      setScreen={(next) => navigate(next === "edge" ? "/edge" : `/${next}`)}
+    />
+  )
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route element={<GuestOnly />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      </Route>
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route element={<RequireAuth />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/metrics" element={<MetricsPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/stacks" element={<StacksPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<NotFoundPage />} />
+      <Route path="/login" element={<Guest />} />
+      <Route path="/register" element={<Guest />} />
+      <Route path="/forgot-password" element={<Guest />} />
+      <Route path="/reset-password" element={<Guest />} />
+      <Route path="/edge" element={<SignedIn />} />
+      <Route path="/apm" element={<SignedIn />} />
+      <Route path="/hardware" element={<SignedIn />} />
+      <Route path="/updates" element={<SignedIn />} />
+      <Route path="/" element={<Navigate to="/edge" replace />} />
+      <Route path="*" element={<Navigate to="/edge" replace />} />
     </Routes>
   )
 }
