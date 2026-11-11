@@ -9,7 +9,7 @@ Ultra-lightweight open-source control panel for a 1GB VPS and a 64-core dedicate
 
 Altas reads true server state from `/proc`. Cache is not reported as memory full. The monitoring agent is built to stay under 20MB resident. The panel API targets about 15–40MB idle, so the host keeps its RAM for the workloads on it. The same control plane is the path to multi-server, multi-domain, and multi-email operations, with an AI Server Doctor on top of that telemetry.
 
-**v0.2.1** keeps the first-account admin gate and the monitoring shell: Edge Traffic, Projects & APM, and Hardware, in light and dark. Numbers come from this host. A missing source stays empty. The Edge map fills from GeoLite2-Country when `MAXMIND_LICENSE_KEY` is set, and stays empty when it is not. Authenticator sign-in is real TOTP. WebAuthn is shown and does not sign anyone in. Admins reach auto-update from the command palette. The design notes are [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+**v0.3.0** is the first release with an official host installer. The monitoring shell is unchanged: Edge Traffic, Projects & APM, and Hardware, in light and dark, with numbers from this host. A missing source stays empty. The Edge map fills from GeoLite2-Country when `MAXMIND_LICENSE_KEY` is set, and stays empty when it is not. Authenticator sign-in is real TOTP. WebAuthn is shown and does not sign anyone in. Admins turn on auto-update from the command palette. The design notes are [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## How Altas works
 
@@ -20,19 +20,42 @@ Altas reads true server state from `/proc`. Cache is not reported as memory full
 3. **Manage domains & mail** — SSL, multi-domain, multi-mailbox from one place
 4. **Monitor** — True-State metrics + AI Server Doctor
 
-`get.altaspanel.tech` is the planned install host. The script is not live yet. Until it is, use the [quick start](#quick-start) below.
+The official install is the one-liner below. It works once a `v*` GitHub Release is published and [get.altaspanel.tech](https://get.altaspanel.tech) proxies `scripts/install.sh`. Until that release exists, the command exits with a clear message and the [quick start](#quick-start) still runs the panel from source or Compose.
 
 ## Install
 
-### Planned one-liner
-
-`get.altaspanel.tech` is the install host target. It is not serving the installer yet.
+### Official one-liner
 
 ```bash
 curl -fsSL https://get.altaspanel.tech | sudo bash
 ```
 
-Until the one-liner is live, run the panel with Docker Compose or from source. Auto-update applies after that install, once the installer and this updater are both in use. It stays off until an admin enables it. A check reads GitHub Releases for `junaidrehman04/altas-panel`, requires the SHA256 from that release's checksum file, writes the binary only, restarts the `altas-panel` systemd unit, and can roll back to the previous binary. Details are in [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+That host is the marketing site. It should proxy the stable script in this repository:
+
+`https://raw.githubusercontent.com/junaidrehman04/altas-panel/main/scripts/install.sh`
+
+The same file is attached to each GitHub Release as `install.sh`. The script on `main` is the one to proxy so the installer can be fixed without waiting for a panel release. It only downloads artifacts from `github.com` (or from loopback when `ALTAS_DOWNLOAD_BASE` points at a local test). It checks `SHA256SUMS` before it writes anything, creates a system user named `altas`, a data directory, `/etc/altas/altas.env` with an empty `MAXMIND_LICENSE_KEY`, and a `altas-panel` systemd unit. Re-running it upgrades the binary and keeps the database and env file.
+
+```bash
+sudo bash scripts/install.sh --version v0.3.0
+sudo bash scripts/install.sh --uninstall
+sudo bash scripts/install.sh --uninstall --purge
+```
+
+`ALTAS_VERSION` selects the same tag as `--version`. After install, open the printed URL. The first account you register becomes the admin. Auto-update stays off until that admin enables it. Details are in [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+
+### Release process
+
+Tag a commit and push the tag. `.github/workflows/release.yml` builds the web UI, embeds it in the API, cross-compiles `altas-panel-linux-amd64` and `altas-panel-linux-arm64`, packs each binary into a tarball, writes `SHA256SUMS`, and publishes a GitHub Release that also contains `install.sh`. Auto-update installs the raw binary. The installer installs the tarball. Both names are in `SHA256SUMS`.
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+Pull requests run `.github/workflows/ci.yml` (`go test ./...` and `npm run build`).
+
+Docker Compose and a source checkout remain available below. Compose does not use this installer. Leave auto-update off for a Compose install. `docker compose restart api` restarts the existing image. It does not replace it.
 
 ### Docker Compose
 
@@ -100,13 +123,13 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | Read-only local Compose inventory | Implemented, off by default |
 | Path jail and command allowlist | Implemented |
 | Report-only malware hook (no auto-delete, ClamAV not executed) | Implemented |
-| Auto-update from the command palette (Updates). Ed25519 runs when a public key is set; a project key is not pinned yet | Partially |
+| Auto-update from the command palette (Updates). SHA256 is required. Ed25519 also runs when a public key is set; a project key is not pinned yet | Implemented |
 | Container create / start / stop from templates | Coming |
 | File manager | Coming |
 | Multi-server host picker | Coming (this release shows the local host only) |
 | External access-log ingest beyond the optional file tail | Coming |
 | Malware scanning beyond the hook | Coming |
-| `get.altaspanel.tech` installer | Coming (not live) |
+| Official installer (`scripts/install.sh`, systemd, SHA256). The one-liner works after a `v*` release is published and get.altaspanel.tech proxies that script | Implemented |
 | Multi-domain and SSL | Coming |
 | Multi-email / mail suite (DKIM, SPF, DMARC) | Coming |
 | AI Server Doctor | Coming |
@@ -187,7 +210,7 @@ Most panels do not leave public registration open. Altas does not either, after 
 
 True state means reading the kernel, not a second runtime parked beside it. `/proc` separates application RAM from buffer and cache, which is the difference between "the box is full" and "the page cache is doing its job." The monitoring agent target stays under 20MB resident. The API target is about 15–40MB idle. Multi-server comes later: many hosts, one plane, still that small.
 
-v0.2.1 reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, and can update an installed binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+v0.3.0 reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, serves the panel UI from the same binary, and can update that binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## Checks
 
@@ -217,7 +240,10 @@ apps/api/internal/stacks     Stack registry and read-only Compose probe
 apps/api/internal/malware    Report-only scanner hook
 apps/api/internal/update     Official release check, checksum, install, rollback
 apps/api/internal/version    Build version string
+apps/api/internal/webui      Panel UI embedded in release binaries
 apps/web                     Vite + React + Tailwind shell
+scripts/install.sh           Official host installer
+.github/workflows            CI and GitHub Release publishing
 docker-compose.yml           Production-style panel deploy
 docker-compose.dev.yml       Dev containers
 docs/architecture            Phase 1 design
@@ -258,7 +284,7 @@ The API reads its environment directly. See `.env.example`.
 
 `ALTAS_DOCKER_PROBE` accepts only those on values and `0` / `false` / `no` / `off`. Anything else leaves the probe off.
 
-The release API host is always `https://api.github.com`. There is no setting that points updates at another URL. Scheduled checks do not run until an admin enables auto-update. Check now and Apply are limited to once a minute. For Compose, leave auto-update off and restart the image with `docker compose restart api`. That restarts the container. It does not replace the image.
+The release API host is `https://api.github.com` in production. `ALTAS_UPDATE_API_BASE` is ignored unless `ALTAS_ENV=development`, and then only a loopback URL is accepted, so tests can publish a fake release. Scheduled checks do not call GitHub until an admin enables auto-update. The process wakes about once a minute. A manual check while auto-update is off does not consume that schedule. GitHub is contacted at `ALTAS_UPDATE_INTERVAL` (6–24 hours, default 12). Check now and Apply are limited to once a minute. When auto-update is on, a verified newer release is installed and the `altas-panel` unit restarts. A bad checksum is refused. If the new process does not stay active, the previous binary is restored from `.bak`. For Compose, leave auto-update off and restart the image with `docker compose restart api`. That restarts the container. It does not replace the image.
 
 ## How sign-in works
 

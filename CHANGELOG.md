@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0
+
+Official host install and a self-update path that matches it.
+
+### Added
+
+- `scripts/install.sh`, the script behind `curl -fsSL https://get.altaspanel.tech | sudo bash`. It detects amd64 and arm64, installs packages idempotently, verifies `SHA256SUMS`, creates the `altas` system user, `/var/lib/altas`, `/etc/altas/altas.env` with an empty `MAXMIND_LICENSE_KEY`, and the `altas-panel` systemd unit. Re-running upgrades the binary. `--uninstall` removes the service and keeps data unless `--purge` is set
+- GitHub Actions CI (`go test`, `npm run build`) and a release workflow that embeds the web UI, builds linux amd64 and arm64 binaries, publishes tarballs, `SHA256SUMS`, and `install.sh`
+- The panel UI is served by the API binary, so one systemd service is the whole panel and auto-update replaces it
+
+### Changed
+
+- The running version is `v0.3.0`
+- Auto-update wakes about once a minute and installs on the next wake after an admin enables it. A preview check while the toggle is off no longer delays that first install
+- A restart runs outside the service process. If the new process does not stay active, `.bak` is restored and the unit is started again
+- `X-Forwarded-For` is trusted only from a loopback or private peer, and the last hop is the client address
+
+### Not in this version
+
+- A pinned Ed25519 project key. The checksum file remains the gate unless `ALTAS_UPDATE_PUBKEY` is set
+- WebAuthn / security keys
+- A second server in the host picker
+- Creating, starting, or stopping containers
+- File manager
+- Malware scanning beyond the report-only hook
+
 ## 0.2.1
 
 GeoLite2-Country sets itself up when a license key is present.

@@ -64,9 +64,23 @@ func TestUpdateConfigIsPinnedAndRateLimited(t *testing.T) {
 	if cfg.UpdateOwner != "junaidrehman04" || cfg.UpdateRepo != "altas-panel" {
 		t.Fatalf("escaped repo = %s/%s", cfg.UpdateOwner, cfg.UpdateRepo)
 	}
+	t.Setenv("ALTAS_ENV", "development")
 	t.Setenv("ALTAS_UPDATE_API_BASE", "https://evil.example")
 	if Load().UpdateAPIBase != "https://api.github.com" {
 		t.Fatal("environment overrode the release API")
+	}
+	t.Setenv("ALTAS_ENV", "production")
+	t.Setenv("ALTAS_UPDATE_API_BASE", "http://127.0.0.1:9")
+	if Load().UpdateAPIBase != "https://api.github.com" {
+		t.Fatal("production accepted a loopback release API")
+	}
+	t.Setenv("ALTAS_ENV", "development")
+	if Load().UpdateAPIBase != "http://127.0.0.1:9" {
+		t.Fatalf("development loopback base = %s", Load().UpdateAPIBase)
+	}
+	t.Setenv("ALTAS_UPDATE_API_BASE", "http://127.0.0.1:9/repos")
+	if Load().UpdateAPIBase != "https://api.github.com" {
+		t.Fatal("path on the release API was accepted")
 	}
 }
 

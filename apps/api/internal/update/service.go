@@ -13,6 +13,7 @@ import (
 const (
 	settingAuto      = "auto_update"
 	settingLastCheck = "update_last_check"
+	settingLastSched = "update_last_scheduled"
 	settingLastApply = "update_last_apply"
 	settingLatest    = "update_latest_version"
 	settingError     = "update_last_error"
@@ -129,7 +130,7 @@ func New(db *sql.DB, opt Options) *Service {
 	}
 	version := opt.Version
 	if version == "" {
-		version = "v0.2.1"
+		version = "v0.3.0"
 	}
 	pub, keyErr := ParsePublicKey(opt.PublicKey)
 	svc := &Service{
@@ -169,11 +170,12 @@ func New(db *sql.DB, opt Options) *Service {
 
 // Run checks for a release on a slow cadence. It does not call GitHub on
 // every tick: Check returns immediately until the saved interval has elapsed
-// and the admin has enabled auto-update.
+// and the admin has enabled auto-update. The loop wakes once a minute so
+// turning auto-update on is picked up without waiting for the full interval.
 func (s *Service) Run(ctx context.Context) {
 	timer := time.NewTimer(time.Minute)
 	defer timer.Stop()
-	ticker := time.NewTicker(15 * time.Minute)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
@@ -221,14 +223,23 @@ func (s *Service) Check(ctx context.Context, manual bool) (Result, error) {
 		if !st.auto {
 			return Result{Skipped: true}, nil
 		}
-		if st.checked && now.Sub(st.checkedAt) < s.interval {
+		// A manual preview while auto-update is off records last check but
+		// must not consume the schedule. Otherwise enabling the toggle would
+		// wait out the full interval before the first install.
+		if st.scheduled && now.Sub(st.scheduledAt) < s.interval {
 			return Result{Skipped: true, Latest: st.latest}, nil
 		}
 	} else if st.checked && now.Sub(st.checkedAt) < s.manualMin {
 		return Result{}, ErrRateLimited
 	}
-	if err := s.put(ctx, settingLastCheck, now.UTC().Format(time.RFC3339)); err != nil {
+	stamp := now.UTC().Format(time.RFC3339)
+	if err := s.put(ctx, settingLastCheck, stamp); err != nil {
 		return Result{}, err
+	}
+	if !manual || st.auto {
+		if err := s.put(ctx, settingLastSched, stamp); err != nil {
+			return Result{}, err
+		}
 	}
 	return s.fetchAndMaybeInstall(ctx, st.auto)
 }
@@ -374,6 +385,16 @@ func (s *Service) install(ctx context.Context, rel Release) error {
 	if err != nil {
 		return err
 	}
+	// Snapshot the running binary before replacing it. systemctl has to stop
+	// this process, so the restart helper must be a copy that is not the file
+	// we are about to overwrite.
+	if sys, ok := s.Restarter.(Systemd); ok && sys.run == nil {
+		if helper, herr := stageHelper(path); herr == nil {
+			sys.Helper = helper
+			sys.Binary = path
+			s.Restarter = sys
+		}
+	}
 	if err := Install(path, rel.Binary); err != nil {
 		return err
 	}
@@ -402,18 +423,20 @@ func (s *Service) binaryPath() (string, error) {
 }
 
 type saved struct {
-	auto      bool
-	checked   bool
-	checkedAt time.Time
-	applied   bool
-	appliedAt time.Time
-	latest    string
-	lastError string
+	auto        bool
+	checked     bool
+	checkedAt   time.Time
+	scheduled   bool
+	scheduledAt time.Time
+	applied     bool
+	appliedAt   time.Time
+	latest      string
+	lastError   string
 }
 
 func (s *Service) load(ctx context.Context) (saved, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)`,
-		settingAuto, settingLastCheck, settingLastApply, settingLatest, settingError)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?)`,
+		settingAuto, settingLastCheck, settingLastSched, settingLastApply, settingLatest, settingError)
 	if err != nil {
 		return saved{}, err
 	}
@@ -431,6 +454,11 @@ func (s *Service) load(ctx context.Context) (saved, error) {
 			if t, err := time.Parse(time.RFC3339, value); err == nil {
 				st.checked = true
 				st.checkedAt = t
+			}
+		case settingLastSched:
+			if t, err := time.Parse(time.RFC3339, value); err == nil {
+				st.scheduled = true
+				st.scheduledAt = t
 			}
 		case settingLastApply:
 			if t, err := time.Parse(time.RFC3339, value); err == nil {

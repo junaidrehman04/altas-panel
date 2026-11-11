@@ -15,9 +15,13 @@ import (
 	"github.com/junaidrehman04/altas/apps/api/internal/db"
 	"github.com/junaidrehman04/altas/apps/api/internal/httpapi"
 	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
+	"github.com/junaidrehman04/altas/apps/api/internal/update"
 )
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "apply-restart" {
+		os.Exit(update.ApplyRestart(os.Args[2:]))
+	}
 	cfg := config.Load()
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 

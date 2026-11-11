@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,8 +68,9 @@ func Load() Config {
 		UpdateRestart:  updateRestart(),
 		UpdateBinary:   strings.TrimSpace(os.Getenv("ALTAS_UPDATE_BINARY")),
 		UpdatePubKey:   strings.TrimSpace(os.Getenv("ALTAS_UPDATE_PUBKEY")),
-		// The release API is pinned. ALTAS_UPDATE_API_BASE is ignored on purpose.
-		UpdateAPIBase:     "https://api.github.com",
+		// Production always uses api.github.com. A loopback base is accepted
+		// only when ALTAS_ENV=development so tests can publish a fake release.
+		UpdateAPIBase:     updateAPIBase(),
 		MetricsEvery:      metricsInterval(),
 		GeoIPDB:           strings.TrimSpace(os.Getenv("ALTAS_GEOIP_DB")),
 		MaxMindLicenseKey: licenseKey(),
@@ -197,6 +199,32 @@ func updateUnit() string {
 		}
 	}
 	return unit
+}
+
+func updateAPIBase() string {
+	const pinned = "https://api.github.com"
+	if strings.TrimSpace(os.Getenv("ALTAS_ENV")) != "development" {
+		return pinned
+	}
+	raw := strings.TrimSpace(os.Getenv("ALTAS_UPDATE_API_BASE"))
+	if raw == "" {
+		return pinned
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || u.User != nil {
+		return pinned
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return pinned
+	}
+	host := u.Hostname()
+	if host != "127.0.0.1" && host != "localhost" {
+		return pinned
+	}
+	if u.Path != "" && u.Path != "/" {
+		return pinned
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func updateRestart() string {
