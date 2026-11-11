@@ -337,7 +337,7 @@ func buildExit(t *testing.T) []byte {
 	out := filepath.Join(dir, "exit")
 	cmd := exec.Command("go", "build", "-o", out, src)
 	cmd.Env = append(os.Environ(), "GO111MODULE=off")
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if _, err := cmd.CombinedOutput(); err != nil {
 		mod := exec.Command("go", "mod", "init", "exitbin")
 		mod.Dir = dir
 		if out, err := mod.CombinedOutput(); err != nil {
@@ -345,7 +345,7 @@ func buildExit(t *testing.T) []byte {
 		}
 		cmd = exec.Command("go", "build", "-o", out, ".")
 		cmd.Dir = dir
-		if output, err = cmd.CombinedOutput(); err != nil {
+		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("build exit: %v\n%s", err, output)
 		}
 	}

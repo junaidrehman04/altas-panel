@@ -282,6 +282,7 @@ EOF
   if need_cmd visudo; then
     visudo -cf "$tmp" >/dev/null
   fi
+  install -d -m 0750 /etc/sudoers.d
   install -m 0440 "$tmp" "$SUDOERS_PATH"
   rm -f "$tmp"
 }
@@ -336,14 +337,17 @@ download_verified() {
   trap "rm -rf $(printf '%q' "$work")" RETURN
   fetch "${base}/SHA256SUMS" "${work}/SHA256SUMS"
   fetch "${base}/${asset}" "${work}/${asset}"
+  # mawk does not support {64}, so the length check stays in awk and grep
+  # validates the hex. Both are available on the distros this script supports.
   digest=$(awk -v name="$asset" '
-    $1 ~ /^[0-9A-Fa-f]{64}$/ {
+    {
       n = $2
       sub(/^\*/, "", n)
-      if (n == name) { print tolower($1); exit }
+      if (n == name && length($1) == 64) { print tolower($1); exit }
     }
   ' "${work}/SHA256SUMS")
   [ -n "$digest" ] || die "SHA256SUMS has no entry for ${asset}"
+  printf '%s\n' "$digest" | grep -Eq '^[0-9a-f]{64}$' || die "SHA256SUMS entry for ${asset} is not a SHA256"
   got=$(hash_file "${work}/${asset}")
   if [ "$got" != "$digest" ]; then
     die "SHA256 mismatch for ${asset}"

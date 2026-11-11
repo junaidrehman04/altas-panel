@@ -16,7 +16,7 @@ case "$version" in
     ;;
 esac
 
-root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+root=$(cd "$(dirname "$0")/.." >/dev/null && pwd)
 cd "$root"
 
 npm ci --prefix apps/web
