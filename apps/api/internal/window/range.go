@@ -31,7 +31,7 @@ type Span struct {
 	Monthly             bool
 }
 
-// Parse accepts live, 24h, 7d, 30d, and month (or months).
+// Parse accepts 1h, 6h, live, 24h, 7d, 30d, and month (or months).
 // now is the inclusive end of the window. The caller supplies it so tests stay fixed.
 func Parse(name string, now time.Time) (Span, error) {
 	if strings.ContainsAny(name, "\r\n\x00") {
@@ -40,6 +40,18 @@ func Parse(name string, now time.Time) (Span, error) {
 	now = now.UTC()
 	span := Span{End: now}
 	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "1h":
+		span.Name = "1h"
+		span.Start = now.Add(-time.Hour)
+		span.HostResolution = "15s"
+		span.AnalyticsResolution = "1m"
+		span.VisitorScope = "h"
+	case "6h":
+		span.Name = "6h"
+		span.Start = now.Add(-6 * time.Hour)
+		span.HostResolution = "1m"
+		span.AnalyticsResolution = "1m"
+		span.VisitorScope = "h"
 	case "live":
 		span.Name = "live"
 		span.Start = now.Add(-15 * time.Minute)

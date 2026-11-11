@@ -26,9 +26,13 @@ type Snapshot struct {
 }
 
 // CPUStats is the aggregate CPU. UsagePercent is nil on the first sample.
+// PerCore, IOWaitPercent, and StealPercent are also nil until a second sample exists.
 type CPUStats struct {
-	UsagePercent *float64 `json:"usage_percent"`
-	Cores        int      `json:"cores"`
+	UsagePercent  *float64  `json:"usage_percent"`
+	Cores         int       `json:"cores"`
+	PerCore       []float64 `json:"per_core,omitempty"`
+	IOWaitPercent *float64  `json:"iowait_percent,omitempty"`
+	StealPercent  *float64  `json:"steal_percent,omitempty"`
 }
 
 // MemoryStats separates cache from memory that is actually unavailable.
@@ -38,6 +42,11 @@ type MemoryStats struct {
 	UsedBytes      uint64  `json:"used_bytes"`
 	FreeBytes      uint64  `json:"free_bytes"`
 	CacheBytes     uint64  `json:"cache_bytes"`
+	BuffersBytes   uint64  `json:"buffers_bytes,omitempty"`
+	CachedBytes    uint64  `json:"cached_bytes,omitempty"`
+	AnonBytes      uint64  `json:"anon_bytes,omitempty"`
+	SwapTotalBytes uint64  `json:"swap_total_bytes,omitempty"`
+	SwapUsedBytes  uint64  `json:"swap_used_bytes,omitempty"`
 	UsedPercent    float64 `json:"used_percent"`
 }
 
@@ -50,12 +59,14 @@ type LoadStats struct {
 
 // DiskStats describes one real filesystem mount.
 type DiskStats struct {
-	Mount          string  `json:"mount"`
-	Filesystem     string  `json:"filesystem"`
-	TotalBytes     uint64  `json:"total_bytes"`
-	UsedBytes      uint64  `json:"used_bytes"`
-	AvailableBytes uint64  `json:"available_bytes"`
-	UsedPercent    float64 `json:"used_percent"`
+	Mount            string   `json:"mount"`
+	Filesystem       string   `json:"filesystem"`
+	Device           string   `json:"device,omitempty"`
+	TotalBytes       uint64   `json:"total_bytes"`
+	UsedBytes        uint64   `json:"used_bytes"`
+	AvailableBytes   uint64   `json:"available_bytes"`
+	UsedPercent      float64  `json:"used_percent"`
+	InodeUsedPercent *float64 `json:"inode_used_percent,omitempty"`
 }
 
 // NetStats is one interface. Rates are nil until a second sample exists.

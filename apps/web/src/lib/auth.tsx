@@ -9,12 +9,22 @@ import {
 } from "react"
 import { api, type User } from "./api"
 
+export type LoginResult = {
+  totpRequired: boolean
+  challenge?: string
+  account?: string
+  user?: User
+}
+
 type AuthContextValue = {
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, remember?: boolean) => Promise<LoginResult>
+  completeTotp: (challenge: string, code: string, trust: boolean) => Promise<User>
+  completeRecovery: (challenge: string, code: string) => Promise<User>
   register: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  refresh: () => Promise<void>
   clearLocalSession: () => void
 }
 
@@ -41,12 +51,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await api<{ user: User }>("/api/auth/login", {
+  const refresh = useCallback(async () => {
+    const data = await api<{ user: User }>("/api/me")
+    setUser(data.user)
+  }, [])
+
+  const login = useCallback(async (email: string, password: string, remember = true) => {
+    const data = await api<{ user?: User; totp_required?: boolean; challenge?: string; account?: string }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, remember }),
+    })
+    if (data.totp_required) {
+      return { totpRequired: true, challenge: data.challenge, account: data.account }
+    }
+    setUser(data.user ?? null)
+    return { totpRequired: false, user: data.user }
+  }, [])
+
+  const completeTotp = useCallback(async (challenge: string, code: string, trust: boolean) => {
+    const data = await api<{ user: User }>("/api/auth/totp", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code, trust }),
     })
     setUser(data.user)
+    return data.user
+  }, [])
+
+  const completeRecovery = useCallback(async (challenge: string, code: string) => {
+    const data = await api<{ user: User }>("/api/auth/recovery", {
+      method: "POST",
+      body: JSON.stringify({ challenge, code }),
+    })
+    setUser(data.user)
+    return data.user
   }, [])
 
   const register = useCallback(async (email: string, password: string) => {
@@ -67,8 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, login, register, logout, clearLocalSession }),
-    [user, loading, login, register, logout, clearLocalSession],
+    () => ({ user, loading, login, completeTotp, completeRecovery, register, logout, refresh, clearLocalSession }),
+    [user, loading, login, completeTotp, completeRecovery, register, logout, refresh, clearLocalSession],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

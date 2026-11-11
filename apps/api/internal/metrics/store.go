@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -111,8 +112,59 @@ func (s *Store) RecordSnapshot(ctx context.Context, snap Snapshot) error {
 		if err != nil {
 			return err
 		}
+		if err := s.recordDetail(ctx, resolution, bucket, snap); err != nil {
+			return err
+		}
 	}
 	s.maybePrune(ctx, time.Now().UTC())
+	return nil
+}
+
+func (s *Store) recordDetail(ctx context.Context, resolution string, bucket int64, snap Snapshot) error {
+	memSamples := 0
+	if snap.Memory.TotalBytes > 0 {
+		memSamples = 1
+	}
+	cpuSamples := 0
+	var iowait, steal float64
+	if snap.CPU.IOWaitPercent != nil && snap.CPU.StealPercent != nil {
+		cpuSamples = 1
+		iowait = *snap.CPU.IOWaitPercent
+		steal = *snap.CPU.StealPercent
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE host_metric_buckets SET
+			mem_detail_samples = mem_detail_samples + ?,
+			rss_sum = rss_sum + ?,
+			buf_sum = buf_sum + ?,
+			cache_sum = cache_sum + ?,
+			free_sum = free_sum + ?,
+			avail_sum = avail_sum + ?,
+			swap_sum = swap_sum + ?,
+			cpu_detail_samples = cpu_detail_samples + ?,
+			iowait_sum = iowait_sum + ?,
+			steal_sum = steal_sum + ?
+		WHERE resolution = ? AND bucket_start = ?
+	`, memSamples, snap.Memory.AnonBytes, snap.Memory.BuffersBytes, snap.Memory.CachedBytes,
+		snap.Memory.FreeBytes, snap.Memory.AvailableBytes, snap.Memory.SwapUsedBytes,
+		cpuSamples, iowait, steal, resolution, bucket)
+	if err != nil {
+		return err
+	}
+	if cpuSamples == 0 || len(snap.CPU.PerCore) == 0 {
+		return nil
+	}
+	for i, pct := range snap.CPU.PerCore {
+		if _, err := s.db.ExecContext(ctx, `
+			INSERT INTO host_core_buckets (resolution, bucket_start, core, util_sum, samples)
+			VALUES (?, ?, ?, ?, 1)
+			ON CONFLICT(resolution, bucket_start, core) DO UPDATE SET
+				util_sum = util_sum + excluded.util_sum,
+				samples = samples + 1
+		`, resolution, bucket, i, pct); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -242,9 +294,15 @@ func (s *Store) Prune(ctx context.Context, now time.Time) error {
 		{"1d", window.RetainDay},
 	}
 	for _, cut := range cuts {
+		before := now.Add(-cut.age).Unix()
 		if _, err := s.db.ExecContext(ctx, `
 			DELETE FROM host_metric_buckets WHERE resolution = ? AND bucket_start < ?
-		`, cut.res, now.Add(-cut.age).Unix()); err != nil {
+		`, cut.res, before); err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `
+			DELETE FROM host_core_buckets WHERE resolution = ? AND bucket_start < ?
+		`, cut.res, before); err != nil {
 			return err
 		}
 	}
@@ -265,3 +323,142 @@ func (s *Store) maybePrune(ctx context.Context, now time.Time) {
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
 }
+
+// DetailPoint is memory composition and CPU wait for one bucket.
+// Pointers are nil when that bucket was recorded before those fields existed.
+type DetailPoint struct {
+	T        string   `json:"t"`
+	RSS      *uint64  `json:"rss_bytes"`
+	Buffers  *uint64  `json:"buffers_bytes"`
+	Cache    *uint64  `json:"cache_bytes"`
+	Free     *uint64  `json:"free_bytes"`
+	Avail    *uint64  `json:"available_bytes"`
+	SwapUsed *uint64  `json:"swap_used_bytes"`
+	IOWait   *float64 `json:"iowait_percent"`
+	Steal    *float64 `json:"steal_percent"`
+}
+
+// DetailSeries returns memory composition and wait percentages for span.
+func (s *Store) DetailSeries(ctx context.Context, span window.Span) ([]DetailPoint, error) {
+	resolution := span.HostResolution
+	if span.Monthly {
+		resolution = "1d"
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT bucket_start, mem_detail_samples, rss_sum, buf_sum, cache_sum, free_sum, avail_sum, swap_sum,
+		       cpu_detail_samples, iowait_sum, steal_sum
+		FROM host_metric_buckets
+		WHERE resolution = ? AND bucket_start >= ? AND bucket_start <= ?
+		ORDER BY bucket_start
+	`, resolution, span.Start.Unix(), span.End.Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []DetailPoint{}
+	for rows.Next() {
+		var start, memN, rss, buf, cache, free, avail, swap, cpuN int64
+		var iowait, steal float64
+		if err := rows.Scan(&start, &memN, &rss, &buf, &cache, &free, &avail, &swap, &cpuN, &iowait, &steal); err != nil {
+			return nil, err
+		}
+		point := DetailPoint{T: time.Unix(start, 0).UTC().Format(time.RFC3339)}
+		if memN > 0 {
+			point.RSS = u64ptr(uint64(rss / memN))
+			point.Buffers = u64ptr(uint64(buf / memN))
+			point.Cache = u64ptr(uint64(cache / memN))
+			point.Free = u64ptr(uint64(free / memN))
+			point.Avail = u64ptr(uint64(avail / memN))
+			point.SwapUsed = u64ptr(uint64(swap / memN))
+		}
+		if cpuN > 0 {
+			point.IOWait = f64ptr(round2(iowait / float64(cpuN)))
+			point.Steal = f64ptr(round2(steal / float64(cpuN)))
+		}
+		out = append(out, point)
+	}
+	return out, rows.Err()
+}
+
+// CoreHeat is per-core utilisation, one row per core and one column per bucket.
+type CoreHeat struct {
+	Cores   []string    `json:"cores"`
+	Buckets []string    `json:"buckets"`
+	Values  [][]float64 `json:"values"`
+}
+
+// CoreSeries returns a heatmap matrix for span. An empty result has empty slices.
+func (s *Store) CoreSeries(ctx context.Context, span window.Span) (CoreHeat, error) {
+	resolution := span.HostResolution
+	if span.Monthly {
+		resolution = "1d"
+	}
+	heat := CoreHeat{Cores: []string{}, Buckets: []string{}, Values: [][]float64{}}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT bucket_start, core, util_sum, samples
+		FROM host_core_buckets
+		WHERE resolution = ? AND bucket_start >= ? AND bucket_start <= ?
+		ORDER BY bucket_start, core
+	`, resolution, span.Start.Unix(), span.End.Unix())
+	if err != nil {
+		return heat, err
+	}
+	defer rows.Close()
+	type cell struct {
+		start   int64
+		core    int
+		util    float64
+		samples int64
+	}
+	var cells []cell
+	maxCore := -1
+	for rows.Next() {
+		var item cell
+		if err := rows.Scan(&item.start, &item.core, &item.util, &item.samples); err != nil {
+			return heat, err
+		}
+		if item.samples <= 0 {
+			continue
+		}
+		item.util = round2(item.util / float64(item.samples))
+		cells = append(cells, item)
+		if item.core > maxCore {
+			maxCore = item.core
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return heat, err
+	}
+	if maxCore < 0 {
+		return heat, nil
+	}
+	buckets := []int64{}
+	index := map[int64]int{}
+	for _, item := range cells {
+		if _, ok := index[item.start]; ok {
+			continue
+		}
+		index[item.start] = len(buckets)
+		buckets = append(buckets, item.start)
+	}
+	heat.Cores = make([]string, maxCore+1)
+	for i := range heat.Cores {
+		heat.Cores[i] = "cpu" + strconv.Itoa(i)
+	}
+	heat.Buckets = make([]string, len(buckets))
+	for i, start := range buckets {
+		heat.Buckets[i] = time.Unix(start, 0).UTC().Format(time.RFC3339)
+	}
+	heat.Values = make([][]float64, maxCore+1)
+	for i := range heat.Values {
+		heat.Values[i] = make([]float64, len(buckets))
+	}
+	for _, item := range cells {
+		heat.Values[item.core][index[item.start]] = item.util
+	}
+	return heat, nil
+}
+
+func u64ptr(v uint64) *uint64 { return &v }
+
+func f64ptr(v float64) *float64 { return &v }

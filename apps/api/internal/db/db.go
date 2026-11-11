@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -37,7 +38,71 @@ func Open(path string) (*sql.DB, error) {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	if err := ensureUserSecurityColumns(sqlDB); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("migrate database: %w", err)
+	}
+	if err := ensureHostDetailColumns(sqlDB); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("migrate database: %w", err)
+	}
 	return sqlDB, nil
+}
+
+func ensureUserSecurityColumns(sqlDB *sql.DB) error {
+	return ensureColumns(sqlDB, "users", []string{
+		`totp_enabled INTEGER NOT NULL DEFAULT 0`,
+		`totp_secret TEXT NOT NULL DEFAULT ''`,
+		`totp_pending TEXT NOT NULL DEFAULT ''`,
+		`last_sign_in_at TEXT NOT NULL DEFAULT ''`,
+		`last_sign_in_place TEXT NOT NULL DEFAULT ''`,
+	})
+}
+
+func ensureHostDetailColumns(sqlDB *sql.DB) error {
+	return ensureColumns(sqlDB, "host_metric_buckets", []string{
+		`mem_detail_samples INTEGER NOT NULL DEFAULT 0`,
+		`rss_sum INTEGER NOT NULL DEFAULT 0`,
+		`buf_sum INTEGER NOT NULL DEFAULT 0`,
+		`cache_sum INTEGER NOT NULL DEFAULT 0`,
+		`free_sum INTEGER NOT NULL DEFAULT 0`,
+		`avail_sum INTEGER NOT NULL DEFAULT 0`,
+		`swap_sum INTEGER NOT NULL DEFAULT 0`,
+		`cpu_detail_samples INTEGER NOT NULL DEFAULT 0`,
+		`iowait_sum REAL NOT NULL DEFAULT 0`,
+		`steal_sum REAL NOT NULL DEFAULT 0`,
+	})
+}
+
+func ensureColumns(sqlDB *sql.DB, table string, columns []string) error {
+	rows, err := sqlDB.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	found := map[string]bool{}
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, colType string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		found[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, column := range columns {
+		name := strings.Fields(column)[0]
+		if found[name] {
+			continue
+		}
+		if _, err := sqlDB.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureAdminColumn adds is_admin to databases created before the first-admin
@@ -126,11 +191,30 @@ CREATE TABLE IF NOT EXISTS host_metric_buckets (
   disk_used_sum INTEGER NOT NULL DEFAULT 0,
   disk_total INTEGER NOT NULL DEFAULT 0,
   disk_samples INTEGER NOT NULL DEFAULT 0,
-  rx_sum REAL NOT NULL DEFAULT 0,
+	rx_sum REAL NOT NULL DEFAULT 0,
   tx_sum REAL NOT NULL DEFAULT 0,
   net_samples INTEGER NOT NULL DEFAULT 0,
   samples INTEGER NOT NULL DEFAULT 0,
+  mem_detail_samples INTEGER NOT NULL DEFAULT 0,
+  rss_sum INTEGER NOT NULL DEFAULT 0,
+  buf_sum INTEGER NOT NULL DEFAULT 0,
+  cache_sum INTEGER NOT NULL DEFAULT 0,
+  free_sum INTEGER NOT NULL DEFAULT 0,
+  avail_sum INTEGER NOT NULL DEFAULT 0,
+  swap_sum INTEGER NOT NULL DEFAULT 0,
+  cpu_detail_samples INTEGER NOT NULL DEFAULT 0,
+  iowait_sum REAL NOT NULL DEFAULT 0,
+  steal_sum REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (resolution, bucket_start)
+);
+
+CREATE TABLE IF NOT EXISTS host_core_buckets (
+  resolution TEXT NOT NULL,
+  bucket_start INTEGER NOT NULL,
+  core INTEGER NOT NULL,
+  util_sum REAL NOT NULL DEFAULT 0,
+  samples INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (resolution, bucket_start, core)
 );
 
 CREATE TABLE IF NOT EXISTS analytics_meta (
@@ -187,5 +271,52 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS login_guards (
+  email TEXT PRIMARY KEY,
+  failures INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS totp_challenges (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  remember INTEGER NOT NULL DEFAULT 0,
+  persistent INTEGER NOT NULL DEFAULT 1,
+  ttl_seconds INTEGER NOT NULL,
+  place TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS recovery_codes (
+  code_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  used_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS recovery_codes_user_idx ON recovery_codes(user_id);
+
+CREATE TABLE IF NOT EXISTS trust_devices (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS alert_state (
+  user_id TEXT NOT NULL,
+  alert_id TEXT NOT NULL,
+  read_at TEXT,
+  dismissed_at TEXT,
+  PRIMARY KEY (user_id, alert_id)
 );
 `

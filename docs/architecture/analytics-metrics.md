@@ -14,7 +14,7 @@ Both routes require a session. Query values other than `range` and `project` are
 | `GET` | `/api/metrics/host/series?range=` | CPU, memory, disk, and network over time |
 | `GET` | `/api/analytics/summary?range=&project=` | Requests, visitors, bandwidth, errors, p95, and breakdowns |
 
-`range` is `live`, `24h`, `7d`, `30d`, or `month` (`months` is accepted as the same window). `project` is optional. Empty means every project. A project id is a short token: letters, digits, `.`, `_`, and `-`.
+`range` is `1h`, `6h`, `live`, `24h`, `7d`, `30d`, or `month` (`months` is accepted as the same window). `1h` reads 15-second host buckets and 1-minute traffic buckets. `6h` reads 1-minute buckets for both. `project` is optional. Empty means every project. A project id is a short token: letters, digits, `.`, `_`, and `-`.
 
 | Range | Host buckets | Traffic buckets | Window |
 | --- | --- | --- | --- |
