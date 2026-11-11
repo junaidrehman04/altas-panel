@@ -1,6 +1,6 @@
 # Altas Panel web
 
-Vite + React client for the v0.2.0 panel. Signed-in routes are Edge, Projects & APM, and Hardware.
+Vite + React client for the v0.2.1 panel. Signed-in routes are Edge, Projects & APM, and Hardware.
 
 ```bash
 npm install

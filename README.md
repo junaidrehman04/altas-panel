@@ -9,7 +9,7 @@ Ultra-lightweight open-source control panel for a 1GB VPS and a 64-core dedicate
 
 Altas reads true server state from `/proc`. Cache is not reported as memory full. The monitoring agent is built to stay under 20MB resident. The panel API targets about 15–40MB idle, so the host keeps its RAM for the workloads on it. The same control plane is the path to multi-server, multi-domain, and multi-email operations, with an AI Server Doctor on top of that telemetry.
 
-**v0.2.0** keeps the first-account admin gate and adds the monitoring shell: Edge Traffic, Projects & APM, and Hardware, in light and dark. Numbers come from this host. A missing source stays empty. Authenticator sign-in is real TOTP. WebAuthn is shown and does not sign anyone in. Admins reach auto-update from the command palette. The design notes are [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+**v0.2.1** keeps the first-account admin gate and the monitoring shell: Edge Traffic, Projects & APM, and Hardware, in light and dark. Numbers come from this host. A missing source stays empty. The Edge map fills from GeoLite2-Country when `MAXMIND_LICENSE_KEY` is set, and stays empty when it is not. Authenticator sign-in is real TOTP. WebAuthn is shown and does not sign anyone in. Admins reach auto-update from the command palette. The design notes are [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md), [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md), and [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## How Altas works
 
@@ -89,7 +89,7 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | True-state host metrics from `/proc` (CPU, memory composition, disk, network, per-core) | Implemented |
 | History for 1h, 6h, 24h, 7d, and 30d | Implemented |
 | Panel request rollups (requests, visitors, bytes, errors, p95, paths) | Implemented |
-| Privacy-preserving geo (optional local MaxMind database; empty when unset) | Implemented |
+| GeoLite2 country map and table (automatic download when `MAXMIND_LICENSE_KEY` is set; empty when it is not) | Implemented |
 | Combined access-log tail (`ALTAS_ACCESS_LOG`) | Implemented, off by default |
 | Read-only container list when a Docker socket is present | Implemented |
 | Listening sockets, deleted-open files, mdstat, NVMe sysfs, crontab and mail log when readable | Implemented |
@@ -110,6 +110,18 @@ Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The dev server proxies `/ap
 | Multi-domain and SSL | Coming |
 | Multi-email / mail suite (DKIM, SPF, DMARC) | Coming |
 | AI Server Doctor | Coming |
+
+### GeoIP setup
+
+The Edge Traffic map and country table read a local GeoLite2-Country database. They stay empty when that file is missing. The panel does not invent countries.
+
+1. Create a free GeoLite2 license key at [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup).
+2. Set `MAXMIND_LICENSE_KEY` in the server environment. Docker Compose reads it from the shell or a `.env` file next to `docker-compose.yml`. The key stays on the server. Do not commit it, and do not commit a GeoLite2 `.mmdb`.
+3. Optionally set `ALTAS_GEOIP_DB` to an absolute path. When it is unset and the key is set, the database is written beside the SQLite file as `GeoLite2-Country.mmdb` (`/data/GeoLite2-Country.mmdb` in Compose).
+
+On start, a missing file is downloaded (edition `GeoLite2-Country`), checked against MaxMind's SHA256 file when that file is published, and opened to confirm it is a Country database. The reader reloads without a restart. A weekly refresh replaces the file only after those checks pass. A failed refresh keeps the previous file and logs the failure without the key or the download URL.
+
+This product includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com.
 
 ## Screenshots
 
@@ -175,7 +187,7 @@ Most panels do not leave public registration open. Altas does not either, after 
 
 True state means reading the kernel, not a second runtime parked beside it. `/proc` separates application RAM from buffer and cache, which is the difference between "the box is full" and "the page cache is doing its job." The monitoring agent target stays under 20MB resident. The API target is about 15–40MB idle. Multi-server comes later: many hosts, one plane, still that small.
 
-v0.2.0 reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, and can update an installed binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
+v0.2.1 reads the local host, keeps a short SQLite history of those readings, rolls up requests the API handled, and can update an installed binary from official GitHub Releases. The locked foundation is [docs/architecture/phase-1-stacks-monitoring.md](docs/architecture/phase-1-stacks-monitoring.md). Rollups, retention, and the IP policy are [docs/architecture/analytics-metrics.md](docs/architecture/analytics-metrics.md). The updater design is [docs/architecture/auto-update.md](docs/architecture/auto-update.md).
 
 ## Checks
 
@@ -198,6 +210,7 @@ apps/api/internal/httpapi    Chi routes
 apps/api/internal/db         SQLite schema (pure Go driver)
 apps/api/internal/metrics    /proc host summaries and SQLite history
 apps/api/internal/analytics  Request rollups, privacy truncation, optional log tail
+apps/api/internal/geoip      GeoLite2-Country download and weekly refresh
 apps/api/internal/window     Shared time-range parsing
 apps/api/internal/security   Path jail and command allowlist
 apps/api/internal/stacks     Stack registry and read-only Compose probe
@@ -239,7 +252,8 @@ The API reads its environment directly. See `.env.example`.
 | `ALTAS_UPDATE_BINARY` | this process | Absolute path of the binary to replace |
 | `ALTAS_UPDATE_PUBKEY` | empty | Hex Ed25519 public key. Empty keeps the SHA256 checksum as the gate |
 | `ALTAS_METRICS_INTERVAL` | `15s` | How often host history is sampled. Below 5s or above 5m falls back to 15s |
-| `ALTAS_GEOIP_DB` | empty | Optional MaxMind `.mmdb`, absolute path. Empty leaves countries and cities blank |
+| `MAXMIND_LICENSE_KEY` | empty | MaxMind GeoLite2 license key. Empty leaves the map empty unless `ALTAS_GEOIP_DB` already points at a database. Never logged |
+| `ALTAS_GEOIP_DB` | empty, or `GeoLite2-Country.mmdb` beside `ALTAS_DB` when a key is set | Absolute path of the country database |
 | `ALTAS_ACCESS_LOG` | empty | Optional Combined access log to tail. Empty leaves external ingest off |
 
 `ALTAS_DOCKER_PROBE` accepts only those on values and `0` / `false` / `no` / `off`. Anything else leaves the probe off.

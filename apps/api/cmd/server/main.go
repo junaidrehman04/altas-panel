@@ -31,9 +31,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go api.RunMaintenance(ctx)
+	go api.RunGeoIP(ctx)
 	go metrics.Sample(ctx, metrics.NewCollector(cfg.HostProc, cfg.HostRoot), metrics.NewStore(sqlDB), cfg.MetricsEvery, logger)
 	if cfg.AccessLog != "" {
-		go analytics.Follow(ctx, cfg.AccessLog, analytics.NewRecorder(sqlDB, analytics.OpenLocator(cfg.GeoIPDB, logger)), logger)
+		go analytics.Follow(ctx, cfg.AccessLog, analytics.NewRecorder(sqlDB, api.Locator()), logger)
 	}
 
 	srv := &http.Server{

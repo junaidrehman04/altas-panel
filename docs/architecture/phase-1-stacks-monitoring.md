@@ -137,7 +137,7 @@ The rules from this phase still hold:
 - Retention is fixed. Older buckets are deleted
 - Per-project filters use the project id, not a free-form query
 
-No GeoIP database file is shipped with the panel. The access-log tail is off unless the operator sets a path.
+No GeoIP database file is shipped with the panel. A `MAXMIND_LICENSE_KEY` downloads GeoLite2-Country into `ALTAS_GEOIP_DB`. The access-log tail is off unless the operator sets a path.
 
 ## 7. Malware
 

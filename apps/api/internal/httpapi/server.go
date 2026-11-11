@@ -17,6 +17,7 @@ import (
 	"github.com/junaidrehman04/altas/apps/api/internal/analytics"
 	"github.com/junaidrehman04/altas/apps/api/internal/auth"
 	"github.com/junaidrehman04/altas/apps/api/internal/config"
+	"github.com/junaidrehman04/altas/apps/api/internal/geoip"
 	"github.com/junaidrehman04/altas/apps/api/internal/inspect"
 	"github.com/junaidrehman04/altas/apps/api/internal/metrics"
 	"github.com/junaidrehman04/altas/apps/api/internal/stacks"
@@ -37,7 +38,7 @@ type handler struct {
 	metrics   *metrics.Collector
 	hostStore *metrics.Store
 	traffic   *analytics.Recorder
-	geo       analytics.Locator
+	geo       *analytics.Reloader
 	reader    *inspect.Reader
 	probe     stacks.Probe
 	updates   *update.Service
@@ -60,6 +61,22 @@ func (a *API) RunMaintenance(ctx context.Context) {
 	a.h.updates.Run(ctx)
 }
 
+// RunGeoIP downloads GeoLite2-Country when a license key is set and the database
+// file is missing, then refreshes it weekly. No key leaves the current reader as it is.
+func (a *API) RunGeoIP(ctx context.Context) {
+	geoip.Run(ctx, geoip.Options{
+		Path:   a.h.cfg.GeoDBPath(),
+		Key:    a.h.cfg.MaxMindLicenseKey,
+		Logger: a.h.log,
+		Reload: a.h.geo.Reload,
+	})
+}
+
+// Locator is the shared country reader, including the access-log tail.
+func (a *API) Locator() analytics.Locator {
+	return a.h.geo
+}
+
 // New builds the HTTP API. logger receives the development password-reset URL.
 func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) *API {
 	if logger == nil {
@@ -73,7 +90,7 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) *API {
 	if err != nil {
 		panic(err)
 	}
-	geo := analytics.OpenLocator(cfg.GeoIPDB, logger)
+	geo := analytics.NewReloader(cfg.GeoDBPath(), logger)
 	h := &handler{
 		cfg:       cfg,
 		svc:       svc,

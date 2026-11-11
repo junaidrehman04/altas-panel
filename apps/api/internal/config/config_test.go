@@ -1,6 +1,8 @@
 package config
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,11 +72,15 @@ func TestUpdateConfigIsPinnedAndRateLimited(t *testing.T) {
 
 func TestLoadAnalyticsDefaults(t *testing.T) {
 	t.Setenv("ALTAS_GEOIP_DB", "")
+	t.Setenv("MAXMIND_LICENSE_KEY", "")
 	t.Setenv("ALTAS_ACCESS_LOG", "")
 	t.Setenv("ALTAS_METRICS_INTERVAL", "")
 	cfg := Load()
-	if cfg.GeoIPDB != "" || cfg.AccessLog != "" || cfg.MetricsEvery != 15*time.Second {
-		t.Fatalf("cfg = %+v", cfg)
+	if cfg.GeoIPDB != "" || cfg.MaxMindLicenseKey != "" || cfg.AccessLog != "" || cfg.MetricsEvery != 15*time.Second {
+		t.Fatal("analytics defaults were not empty")
+	}
+	if cfg.GeoDBPath() != "" {
+		t.Fatal("geo path without a key")
 	}
 	t.Setenv("ALTAS_METRICS_INTERVAL", "1s")
 	if Load().MetricsEvery != 15*time.Second {
@@ -83,5 +89,27 @@ func TestLoadAnalyticsDefaults(t *testing.T) {
 	t.Setenv("ALTAS_METRICS_INTERVAL", "30s")
 	if Load().MetricsEvery != 30*time.Second {
 		t.Fatal("30s interval was rejected")
+	}
+}
+
+func TestGeoDBPathUsesTheDataDirWhenAKeyIsSet(t *testing.T) {
+	t.Setenv("ALTAS_DB", filepath.Join("data", "altas.db"))
+	t.Setenv("ALTAS_GEOIP_DB", "")
+	t.Setenv("MAXMIND_LICENSE_KEY", "test-key")
+	path := Load().GeoDBPath()
+	if !filepath.IsAbs(path) || filepath.Base(path) != "GeoLite2-Country.mmdb" {
+		t.Fatalf("default geo path = %s", path)
+	}
+	if !strings.HasSuffix(filepath.Dir(path), "data") {
+		t.Fatalf("default geo dir = %s", path)
+	}
+	t.Setenv("ALTAS_GEOIP_DB", "/var/lib/altas/custom.mmdb")
+	if Load().GeoDBPath() != "/var/lib/altas/custom.mmdb" {
+		t.Fatal("explicit geo path was replaced")
+	}
+	t.Setenv("ALTAS_GEOIP_DB", "")
+	t.Setenv("MAXMIND_LICENSE_KEY", "bad\nkey")
+	if Load().MaxMindLicenseKey != "" || Load().GeoDBPath() != "" {
+		t.Fatal("newline in the license key was accepted")
 	}
 }
