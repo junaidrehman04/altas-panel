@@ -227,7 +227,7 @@ export function AuthScreen({ theme, setTheme, notice }: { theme: Theme; setTheme
   }
 
   const stepIndex = step === "credentials" || step === "register" || step === "forgot" || step === "reset" ? 1 : 2
-  const version = info.version || "v0.2.1"
+  const version = info.version || "v0.3.0"
   const envLabel = info.env === "production" ? "Production" : info.env === "development" ? "Development" : info.env || "Development"
 
   return (

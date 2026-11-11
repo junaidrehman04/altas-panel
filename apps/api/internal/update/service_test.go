@@ -242,6 +242,97 @@ func TestSignatureRequiredWhenKeyConfigured(t *testing.T) {
 	}
 }
 
+func TestPreviewCheckDoesNotBlockScheduledInstall(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "altas-panel")
+	if err := os.WriteFile(path, fakeELF("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	next := fakeELF("scheduled")
+	sum := sha256.Sum256(next)
+	srv := releaseServer(t, "v0.3.0", next, hex.EncodeToString(sum[:]), nil)
+	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
+	restarts := 0
+	svc := New(openPath(t, filepath.Join(dir, "altas.db")), Options{
+		Version:    "v0.2.1",
+		BaseURL:    srv.URL,
+		BinaryPath: path,
+		Restart:    "none",
+		OS:         "linux",
+		Arch:       "amd64",
+		Interval:   6 * time.Hour,
+		ManualMin:  time.Minute,
+		Now:        func() time.Time { return now },
+	})
+	svc.Restarter = restarterFunc(func(context.Context) error {
+		restarts++
+		return nil
+	})
+
+	preview, err := svc.Check(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Applied || !preview.UpdateAvailable {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if err := svc.SetAutoUpdate(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	scheduled, err := svc.Check(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !scheduled.Applied || restarts != 1 {
+		t.Fatalf("scheduled applied=%v restarts=%d result=%+v", scheduled.Applied, restarts, scheduled)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, next) {
+		t.Fatal("scheduled check did not install the release")
+	}
+}
+
+func TestApplyRollsBackWhenRestartFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "altas-panel")
+	current := fakeELF("current")
+	if err := os.WriteFile(path, current, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	next := fakeELF("next")
+	sum := sha256.Sum256(next)
+	srv := releaseServer(t, "v0.3.0", next, hex.EncodeToString(sum[:]), nil)
+	svc := New(openPath(t, filepath.Join(dir, "altas.db")), Options{
+		Version:    "v0.2.1",
+		BaseURL:    srv.URL,
+		BinaryPath: path,
+		Restart:    "none",
+		OS:         "linux",
+		Arch:       "amd64",
+		ManualMin:  time.Minute,
+	})
+	svc.Restarter = restarterFunc(func(context.Context) error {
+		return ErrRestart
+	})
+	if _, err := svc.Apply(context.Background()); !errors.Is(err, ErrRestart) {
+		t.Fatalf("err = %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, current) {
+		t.Fatal("failed restart left the new binary in place")
+	}
+	if !HasBackup(path) {
+		t.Fatal("backup missing after a failed restart")
+	}
+}
+
 func openPath(t *testing.T, path string) *sql.DB {
 	t.Helper()
 	sqlDB, err := db.Open(path)

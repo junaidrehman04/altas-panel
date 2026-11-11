@@ -1,14 +1,14 @@
 # Auto-update
 
-Auto-update installs a newer official build of the panel binary. It is off until an admin turns it on. The installer host `get.altaspanel.tech` is still not live. Once that installer and this updater are both in use, an update applies to a panel that is already installed.
+Auto-update installs a newer official build of the panel binary. It is off until an admin turns it on. The official installer is `scripts/install.sh`. `get.altaspanel.tech` proxies that file. The one-liner works after a `v*` GitHub Release exists.
 
-The code lives in `apps/api/internal/update`. Settings are rows in the SQLite `settings` table. The admin page is `/settings`.
+The code lives in `apps/api/internal/update`. Settings are rows in the SQLite `settings` table. Admins open Updates from the command palette (`/updates`).
 
 ## What an update is allowed to do
 
 The updater downloads bytes and writes them to the panel binary. It does not run a shell script from the release, and it does not unpack an archive.
 
-It talks only to the GitHub Releases API for one owner and repository. The default is `junaidrehman04/altas-panel`. `ALTAS_UPDATE_OWNER` and `ALTAS_UPDATE_REPO` can retarget that pair, and each value has to be a single repository name. The API origin is `https://api.github.com`. It is not read from the environment.
+It talks only to the GitHub Releases API for one owner and repository. The default is `junaidrehman04/altas-panel`. `ALTAS_UPDATE_OWNER` and `ALTAS_UPDATE_REPO` can retarget that pair, and each value has to be a single repository name. The API origin is `https://api.github.com`. `ALTAS_UPDATE_API_BASE` is ignored in production. When `ALTAS_ENV=development`, a loopback base is accepted so a test can publish a fake release. Any other host is ignored.
 
 Asset URLs inside the release JSON are ignored. The client builds `/repos/{owner}/{repo}/releases/latest` and `/repos/{owner}/{repo}/releases/assets/{id}` itself. A redirect is followed only to `api.github.com`, `github.com`, or the GitHub release CDNs (`objects.githubusercontent.com`, `release-assets.githubusercontent.com`, `github-releases.githubusercontent.com`).
 
@@ -18,26 +18,29 @@ Ed25519 is implemented and runs when `ALTAS_UPDATE_PUBKEY` is a hex-encoded 32-b
 
 ## Apply and rollback
 
-Scheduled checks run only while auto-update is on. The interval is `ALTAS_UPDATE_INTERVAL`, default 12 hours, clamped to 6–24 hours. The loop wakes every 15 minutes and does not call GitHub until that interval has elapsed.
+Scheduled checks run only while auto-update is on. The interval is `ALTAS_UPDATE_INTERVAL`, default 12 hours, clamped to 6–24 hours. The loop wakes about once a minute and does not call GitHub until that interval has elapsed. A Check now performed while auto-update is off records the version and does not consume the schedule, so enabling the toggle installs on the next wake.
 
 Check now is an admin action. It is limited to once a minute. When auto-update is on, a verified newer release is installed immediately. When it is off, Check now only records the version. Apply installs that release without requiring the toggle. Apply has the same one-minute floor.
 
-The current build version is `apps/api/internal/version.Version` (`v0.2.0-dev` unless the build sets `-X github.com/junaidrehman04/altas/apps/api/internal/version.Version=...`). `GET /api/version` returns it. The same value is on `GET /api/health`.
+The current build version is `apps/api/internal/version.Version` (`v0.3.0` unless the build sets `-X github.com/junaidrehman04/altas/apps/api/internal/version.Version=...`). `GET /api/version` returns it. The same value is on `GET /api/health`.
 
 Install writes `binary.next`, copies the current file to `binary.bak`, then renames the new file onto the current path. The previous bytes stay in `.bak`. Rollback copies `.bak` back and restarts. Rollback does not delete `.bak`.
 
-`ALTAS_UPDATE_BINARY` is the file that gets replaced. When it is empty, the updater uses its own executable path. `ALTAS_UPDATE_RESTART=systemd` (the default) runs `systemctl restart` on `ALTAS_UPDATE_UNIT` (default `altas-panel`) with an absolute `systemctl` path and a single unit argument. `ALTAS_UPDATE_RESTART=none` replaces the file and does not restart it. If a restart fails, the previous binary is restored.
+`ALTAS_UPDATE_BINARY` is the file that gets replaced. When it is empty, the updater uses its own executable path. `ALTAS_UPDATE_RESTART=systemd` (the default) restarts `ALTAS_UPDATE_UNIT` (default `altas-panel`). The restart is started outside the service, because a synchronous `systemctl restart` from inside the unit waits for this process to exit. The helper runs `systemctl restart` with an absolute `systemctl` path and a single unit argument. The unit must be `altas-panel`. If the unit does not stay active, the helper copies `.bak` back and restarts again. `ALTAS_UPDATE_RESTART=none` replaces the file and does not restart it. If the in-process restart call fails before the helper starts, the previous binary is restored as well.
 
 A host install that should update itself looks like this:
 
 ```ini
 [Service]
-ExecStart=/usr/local/bin/altas-panel
-Environment=ALTAS_UPDATE_BINARY=/usr/local/bin/altas-panel
+User=altas
+ExecStart=/usr/local/lib/altas/altas-panel
+Environment=ALTAS_UPDATE_BINARY=/usr/local/lib/altas/altas-panel
 Environment=ALTAS_UPDATE_UNIT=altas-panel
 Environment=ALTAS_UPDATE_RESTART=systemd
 Restart=on-failure
 ```
+
+`scripts/install.sh` writes this unit. The binary directory is owned by `altas`, so the process can replace the file. A polkit rule and a sudoers drop-in allow that user to restart only `altas-panel`. Release assets are the raw binaries `altas-panel-linux-amd64` and `altas-panel-linux-arm64` (what auto-update installs) plus `altas-panel-linux-<arch>.tar.gz` (what the installer unpacks). `SHA256SUMS` lists both.
 
 Docker Compose is a different path. `docker compose restart api` restarts the existing image. It does not change that image. Leave auto-update off for a Compose install. Replacing the binary inside the container is not a durable update.
 

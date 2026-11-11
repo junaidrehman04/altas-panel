@@ -23,6 +23,7 @@ import (
 	"github.com/junaidrehman04/altas/apps/api/internal/stacks"
 	"github.com/junaidrehman04/altas/apps/api/internal/update"
 	"github.com/junaidrehman04/altas/apps/api/internal/version"
+	"github.com/junaidrehman04/altas/apps/api/internal/webui"
 	"github.com/junaidrehman04/altas/apps/api/internal/window"
 )
 
@@ -118,7 +119,7 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) *API {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(trustForwardedFromProxy)
 	r.Use(h.track)
 	r.Use(middleware.Recoverer)
 
@@ -153,8 +154,56 @@ func New(cfg config.Config, sqlDB *sql.DB, logger *log.Logger) *API {
 	r.Post("/api/settings/updates/check", h.checkUpdates)
 	r.Post("/api/settings/updates/apply", h.applyUpdate)
 	r.Post("/api/settings/updates/rollback", h.rollbackUpdate)
+	r.NotFound(h.ui)
 	h.routes = r
 	return &API{h: h}
+}
+
+func (h *handler) ui(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+	webui.Serve(w, r)
+}
+
+// trustForwardedFromProxy rewrites RemoteAddr from X-Forwarded-For only when
+// the immediate peer is loopback or a private address. A client that connects
+// directly cannot pick its own address by sending the header. When a trusted
+// proxy appends the peer it saw, the last entry is the one that is kept.
+func trustForwardedFromProxy(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, port, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+			port = "0"
+		}
+		peer := net.ParseIP(host)
+		if peer != nil && (peer.IsLoopback() || peer.IsPrivate()) {
+			if client := forwardedClient(r); client != "" {
+				r.RemoteAddr = net.JoinHostPort(client, port)
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func forwardedClient(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		for i := len(parts) - 1; i >= 0; i-- {
+			candidate := strings.TrimSpace(parts[i])
+			if ip := net.ParseIP(candidate); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+		if ip := net.ParseIP(real); ip != nil {
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {

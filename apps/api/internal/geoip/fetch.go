@@ -283,7 +283,8 @@ func extractMMDB(gz []byte) ([]byte, error) {
 		if err != nil {
 			return nil, errors.New("archive is not a tar")
 		}
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+		// TypeRegA is the legacy NUL type flag for a regular file. Compare with 0 so the deprecated constant is not required.
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != 0 {
 			continue
 		}
 		if strings.Contains(hdr.Name, "..") {

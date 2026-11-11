@@ -1,0 +1,34 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Build web assets and linux binaries
+        run: bash scripts/build-release.sh "${GITHUB_REF_NAME}"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "$(printf '%s\n' "Altas Panel ${GITHUB_REF_NAME}." "" "Install on a systemd host, after this release is published:" "" '```bash' 'curl -fsSL https://get.altaspanel.tech | sudo bash' '```' "" "The installer is scripts/install.sh. It verifies SHA256SUMS, installs the altas-panel binary and the altas-panel systemd unit, and can be re-run to upgrade. Auto-update stays off until an admin enables it.")" \
+            dist/release/*
