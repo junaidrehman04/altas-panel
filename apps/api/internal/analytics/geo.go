@@ -1,10 +1,12 @@
 package analytics
 
 import (
+	"io"
 	"log"
 	"net"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/oschwald/maxminddb-golang"
 )
@@ -67,6 +69,15 @@ func OpenLocator(path string, logger *log.Logger) Locator {
 	return &mmdbLocator{db: reader}
 }
 
+func (m *mmdbLocator) Close() error {
+	if m == nil || m.db == nil {
+		return nil
+	}
+	err := m.db.Close()
+	m.db = nil
+	return err
+}
+
 func (m *mmdbLocator) Enabled() bool { return m != nil && m.db != nil }
 
 func (m *mmdbLocator) Lookup(truncated string) (string, string) {
@@ -82,4 +93,70 @@ func (m *mmdbLocator) Lookup(truncated string) (string, string) {
 		return "", ""
 	}
 	return rec.Country.ISOCode, rec.City.Names["en"]
+}
+
+// Reloader swaps the open database when a new file is ready.
+// Lookups keep using the previous reader until the new file opens.
+type Reloader struct {
+	mu     sync.RWMutex
+	inner  Locator
+	logger *log.Logger
+}
+
+// NewReloader opens path when it is present. A missing file stays disabled.
+func NewReloader(path string, logger *log.Logger) *Reloader {
+	return &Reloader{inner: OpenLocator(path, logger), logger: logger}
+}
+
+func (r *Reloader) Lookup(truncated string) (string, string) {
+	if r == nil {
+		return "", ""
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.inner == nil {
+		return "", ""
+	}
+	return r.inner.Lookup(truncated)
+}
+
+func (r *Reloader) Enabled() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.inner != nil && r.inner.Enabled()
+}
+
+// Reload opens path and replaces the current reader.
+// A path that does not open leaves the previous reader in place.
+func (r *Reloader) Reload(path string) error {
+	if r == nil {
+		return errDatabaseClosed
+	}
+	next := OpenLocator(path, r.logger)
+	if !next.Enabled() {
+		return errDatabaseClosed
+	}
+	r.mu.Lock()
+	prev := r.inner
+	r.inner = next
+	r.mu.Unlock()
+	closeLocator(prev)
+	return nil
+}
+
+var errDatabaseClosed = errString("geoip: database did not open")
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
+
+func closeLocator(loc Locator) {
+	c, ok := loc.(io.Closer)
+	if !ok {
+		return
+	}
+	_ = c.Close()
 }

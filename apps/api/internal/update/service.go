@@ -129,7 +129,7 @@ func New(db *sql.DB, opt Options) *Service {
 	}
 	version := opt.Version
 	if version == "" {
-		version = "v0.2.0"
+		version = "v0.2.1"
 	}
 	pub, keyErr := ParsePublicKey(opt.PublicKey)
 	svc := &Service{

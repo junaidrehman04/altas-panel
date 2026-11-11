@@ -21,6 +21,7 @@ services:
       ALTAS_HOST_PROC: /proc
       ALTAS_HOST_ROOT: /
       ALTAS_DOCKER_PROBE: "0"
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
     volumes:
       - .:/src
     ports:

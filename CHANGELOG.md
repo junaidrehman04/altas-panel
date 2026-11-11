@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.1
+
+GeoLite2-Country sets itself up when a license key is present.
+
+### Added
+
+- `MAXMIND_LICENSE_KEY` downloads GeoLite2-Country on start when `ALTAS_GEOIP_DB` is missing. The archive is checked against MaxMind's SHA256 file when that file is published, then opened to confirm a Country database. The file is written atomically and the reader reloads without a restart
+- A weekly refresh. A failed refresh keeps the previous file and logs the failure without the license key or the download URL
+- GeoLite2 attribution on the Edge Traffic map
+
+### Changed
+
+- The running version is `v0.2.1`
+- With no license key, the map and country table stay empty and name `MAXMIND_LICENSE_KEY` or an absolute `ALTAS_GEOIP_DB`
+
 ## 0.2.0
 
 The signed-in panel now uses the approved monitoring layout, fed by this host. Earlier unreleased notes for host history and traffic rollups are part of this version. There is no 0.3.0.

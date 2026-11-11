@@ -76,16 +76,23 @@ Query strings are not stored, so reset tokens and other secrets in a URL do not 
 
 ## GeoIP
 
-`ALTAS_GEOIP_DB` may point at a MaxMind City or Country `.mmdb` file. The path must be absolute and must not contain `..`. A missing, relative, or unreadable file disables geo and the API reports `geo_configured: false`. The Analytics page says the fields are empty. It does not fill them with placeholders.
+`MAXMIND_LICENSE_KEY` is read from the server environment. When it is set and `ALTAS_GEOIP_DB` is missing, the API downloads GeoLite2-Country (`edition_id=GeoLite2-Country`, suffix `tar.gz`) from MaxMind. The SHA256 file (`suffix=tar.gz.sha256`) is required when MaxMind publishes it. The extracted database must open and its type must be a Country database. The bytes are written atomically. The open reader is replaced without a process restart.
 
-No GeoIP database is shipped in the repository.
+When `ALTAS_GEOIP_DB` is unset and a key is set, the file is `GeoLite2-Country.mmdb` beside the SQLite database. An explicit path must be absolute and must not contain `..`. A missing, relative, or unreadable file disables geo and the API reports `geo_configured: false`. The Edge page says which setting is needed. It does not fill the map with placeholders.
+
+A weekly refresh repeats the download. Any failure keeps the previous file. Logs do not include the license key or the download URL.
+
+No GeoIP database and no license key are shipped in the repository.
+
+`ALTAS_GEOIP_DB` may still point at a MaxMind City or Country `.mmdb` the operator already has. With no license key, that file is used and nothing is downloaded. With a key, the weekly refresh replaces it with GeoLite2-Country after the checks pass.
 
 ## Operator settings
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ALTAS_METRICS_INTERVAL` | `15s` | Host sample interval. Values below 5s or above 5m fall back to 15s |
-| `ALTAS_GEOIP_DB` | empty | Optional MaxMind `.mmdb`. Empty leaves locations blank |
+| `MAXMIND_LICENSE_KEY` | empty | GeoLite2 license key. Empty leaves locations blank unless a database file is already present |
+| `ALTAS_GEOIP_DB` | empty, or beside the SQLite file when a key is set | Country database path. Empty with no key leaves locations blank |
 | `ALTAS_ACCESS_LOG` | empty | Optional Combined log to tail. Empty leaves the tail off |
 
 Host proc paths, the Docker probe, and the command allowlist are unchanged.

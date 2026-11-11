@@ -11,7 +11,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
       target: runtime
-    image: altas-api:0.2.0
+    image: altas-api:0.2.1
     restart: unless-stopped
     environment:
       ALTAS_ADDR: ":8080"
@@ -25,8 +25,9 @@ services:
       # Auto-update installs a host binary and restarts systemd. Leave it off here.
       # `docker compose restart api` restarts this image. It does not change it.
       ALTAS_METRICS_INTERVAL: 15s
-      # Optional. Mount a MaxMind .mmdb and set an absolute path. Missing leaves geo empty.
-      # ALTAS_GEOIP_DB: /data/GeoLite2-City.mmdb
+      # GeoLite2-Country. The key comes from the environment or a .env file. Empty leaves the map empty.
+      MAXMIND_LICENSE_KEY: ${MAXMIND_LICENSE_KEY:-}
+      ALTAS_GEOIP_DB: /data/GeoLite2-Country.mmdb
       # Optional Combined log tail. Off when unset. The path must be absolute and contain no "..".
       # ALTAS_ACCESS_LOG: /var/log/nginx/access.log
     volumes:
@@ -52,7 +53,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       target: runtime
-    image: altas-web:0.2.0
+    image: altas-web:0.2.1
     restart: unless-stopped
     depends_on:
       api:

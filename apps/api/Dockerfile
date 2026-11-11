@@ -14,7 +14,7 @@ RUN apk add --no-cache ca-certificates
 COPY go.mod go.sum ./
 COPY apps ./apps
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/junaidrehman04/altas/apps/api/internal/version.Version=v0.2.0-dev" -o /out/altas-api ./apps/api/cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/junaidrehman04/altas/apps/api/internal/version.Version=v0.2.1" -o /out/altas-api ./apps/api/cmd/server
 
 FROM alpine:3.21 AS runtime
 RUN apk add --no-cache ca-certificates su-exec \

@@ -599,7 +599,7 @@ func trafficView(src Sources) Traffic {
 	}
 	tr.Available = tr.Requests > 0 || len(tr.Labels) > 0
 	if !src.Geo {
-		tr.Note += " GeoIP database is not configured, so countries stay empty."
+		tr.Note += " Set MAXMIND_LICENSE_KEY to a MaxMind GeoLite2 license key, or set ALTAS_GEOIP_DB to an absolute .mmdb path. Countries stay empty until then."
 	}
 	_ = total
 	return tr

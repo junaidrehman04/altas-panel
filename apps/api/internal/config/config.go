@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -12,34 +13,35 @@ import (
 // Host proc paths and the Docker socket come from the operator, never from
 // a request. The Docker probe is off unless ALTAS_DOCKER_PROBE is enabled.
 type Config struct {
-	Addr           string
-	DBPath         string
-	Env            string
-	WebOrigin      string
-	SessionTTL     time.Duration
-	ResetTTL       time.Duration
-	ArgonMemory    uint32
-	ArgonTime      uint32
-	ArgonThreads   uint8
-	HostProc       string
-	HostRoot       string
-	DockerProbe    bool
-	DockerSocket   string
-	ProjectsRoot   string
-	UpdateOwner    string
-	UpdateRepo     string
-	UpdateInterval time.Duration
-	UpdateUnit     string
-	UpdateRestart  string
-	UpdateBinary   string
-	UpdatePubKey   string
-	UpdateAPIBase  string
-	UpdateOS       string
-	UpdateArch     string
-	MetricsEvery   time.Duration
-	GeoIPDB        string
-	AccessLog      string
-	Org            string
+	Addr              string
+	DBPath            string
+	Env               string
+	WebOrigin         string
+	SessionTTL        time.Duration
+	ResetTTL          time.Duration
+	ArgonMemory       uint32
+	ArgonTime         uint32
+	ArgonThreads      uint8
+	HostProc          string
+	HostRoot          string
+	DockerProbe       bool
+	DockerSocket      string
+	ProjectsRoot      string
+	UpdateOwner       string
+	UpdateRepo        string
+	UpdateInterval    time.Duration
+	UpdateUnit        string
+	UpdateRestart     string
+	UpdateBinary      string
+	UpdatePubKey      string
+	UpdateAPIBase     string
+	UpdateOS          string
+	UpdateArch        string
+	MetricsEvery      time.Duration
+	GeoIPDB           string
+	MaxMindLicenseKey string
+	AccessLog         string
+	Org               string
 }
 
 func Load() Config {
@@ -66,12 +68,43 @@ func Load() Config {
 		UpdateBinary:   strings.TrimSpace(os.Getenv("ALTAS_UPDATE_BINARY")),
 		UpdatePubKey:   strings.TrimSpace(os.Getenv("ALTAS_UPDATE_PUBKEY")),
 		// The release API is pinned. ALTAS_UPDATE_API_BASE is ignored on purpose.
-		UpdateAPIBase: "https://api.github.com",
-		MetricsEvery:  metricsInterval(),
-		GeoIPDB:       strings.TrimSpace(os.Getenv("ALTAS_GEOIP_DB")),
-		AccessLog:     strings.TrimSpace(os.Getenv("ALTAS_ACCESS_LOG")),
-		Org:           orgEnv(),
+		UpdateAPIBase:     "https://api.github.com",
+		MetricsEvery:      metricsInterval(),
+		GeoIPDB:           strings.TrimSpace(os.Getenv("ALTAS_GEOIP_DB")),
+		MaxMindLicenseKey: licenseKey(),
+		AccessLog:         strings.TrimSpace(os.Getenv("ALTAS_ACCESS_LOG")),
+		Org:               orgEnv(),
 	}
+}
+
+// GeoDBPath is the country database file.
+// An explicit ALTAS_GEOIP_DB is used as given.
+// When that is empty and a MaxMind license key is set, the file is
+// GeoLite2-Country.mmdb beside the SQLite database.
+func (c Config) GeoDBPath() string {
+	if p := strings.TrimSpace(c.GeoIPDB); p != "" {
+		return p
+	}
+	if strings.TrimSpace(c.MaxMindLicenseKey) == "" {
+		return ""
+	}
+	db := strings.TrimSpace(c.DBPath)
+	if db == "" {
+		db = "data/altas.db"
+	}
+	abs, err := filepath.Abs(filepath.Join(filepath.Dir(db), "GeoLite2-Country.mmdb"))
+	if err != nil || strings.Contains(abs, "..") {
+		return ""
+	}
+	return abs
+}
+
+func licenseKey() string {
+	value := strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY"))
+	if value == "" || len(value) > 256 || strings.ContainsAny(value, "\r\n\x00") {
+		return ""
+	}
+	return value
 }
 
 func orgEnv() string {

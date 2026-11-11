@@ -1,1 +1,1 @@
-export const panelVersion = "v0.2.0"
+export const panelVersion = "v0.2.1"

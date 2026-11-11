@@ -34,6 +34,8 @@ export function EdgePage({ data, loading, initialTab }: { data: EdgeView | null;
   const total = traffic?.countries.reduce((sum, c) => sum + c.requests, 0) ?? 0
   const maxCountry = traffic?.countries[0]?.requests ?? 1
   const securityCount = data?.events.filter((e) => e.sev === "critical" || e.sev === "warning").length ?? 0
+  const showMap = Boolean(traffic?.geo_configured && cities.length > 0)
+  const attribution = "This product includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com"
 
   return (
     <div className="page">
@@ -52,10 +54,11 @@ export function EdgePage({ data, loading, initialTab }: { data: EdgeView | null;
             <Panel className="span-8" title="Geo-IP traffic distribution" definition="Requests by client location when a local MaxMind database is configured. Marker area follows request count, not a live rate."
               state={!data || state === "loading" ? "loading" : traffic?.geo_configured && cities.length > 0 ? "ready" : "unavailable"}
               stateTitle={traffic?.geo_configured ? "No located requests in this range" : "GeoIP database is not configured"}
-              stateText={traffic?.geo_configured ? "Requests were counted, but none resolved to a country centroid." : "Set ALTAS_GEOIP_DB to an absolute MaxMind .mmdb path. Missing files leave the map empty."}
+              stateText={traffic?.geo_configured ? "Requests were counted, but none resolved to a country centroid." : "Set MAXMIND_LICENSE_KEY to a MaxMind GeoLite2 license key, or set ALTAS_GEOIP_DB to an absolute .mmdb path. Missing files leave the map empty."}
               minHeight={420}
               meta={<SourceTag kind={traffic?.geo_configured ? "measured" : "unavailable"} detail={traffic?.note} />}>
               <GeoMap cities={cities} active={new Set(["human", "bot", "ai", "mal"])} mode="volume" neutral selected={city} onSelect={setCity} />
+              {showMap ? <p className="note"><span style={{ minWidth: 0 }}>{attribution}</span></p> : null}
             </Panel>
             <Panel className="span-4" title="Top countries & ASNs" definition="Share of counted requests. Malicious share is not measured." state={!data || state === "loading" ? "loading" : traffic && traffic.countries.length > 0 ? "ready" : "empty"} stateTitle="No countries in this range" stateText={traffic?.note} flush minHeight={420}>
               <div className="table-wrap"><table className="table compact">
@@ -71,7 +74,7 @@ export function EdgePage({ data, loading, initialTab }: { data: EdgeView | null;
                   ))}
                 </tbody>
               </table></div>
-              <div className="panel-foot">Showing {Math.min(8, traffic?.countries.length ?? 0)} countries · addresses are not stored</div>
+              <div className="panel-foot"><span style={{ minWidth: 0, whiteSpace: "normal" }}>Showing {Math.min(8, traffic?.countries.length ?? 0)} countries · addresses are not stored{traffic?.geo_configured && !showMap ? `. ${attribution}` : ""}</span></div>
             </Panel>
             <Panel className="span-12" title="Traffic authenticity" definition="Requests/s by classification." state={data?.classes.available ? "ready" : "unavailable"} stateTitle="Classification is not measured" stateText={data?.classes.reason} minHeight={220} meta={<SourceTag kind="unavailable" />} />
           </div>
